@@ -107,10 +107,10 @@ export const SettingsView = ({ initialTab = 'general' }: { initialTab?: string }
     const [mcpToast, setMcpToast] = useState<{ show: boolean; message: string; type: 'success' | 'warning' | 'error' } | null>(null);
     const [pendingMcpServerName, setPendingMcpServerName] = useState<string | null>(null);
     const [draftMcpServer, setDraftMcpServer] = useState<{
-        name: string; server_type: 'stdio' | 'remote';
+        name: string; label: string; server_type: 'stdio' | 'remote';
         command: string; args: string; env: { key: string; value: string }[];
         url: string; token: string;
-    }>({ name: '', server_type: 'stdio', command: '', args: '', env: [], url: '', token: '' });
+    }>({ name: '', label: '', server_type: 'stdio', command: '', args: '', env: [], url: '', token: '' });
 
     const [availableCapabilities, setAvailableCapabilities] = useState<any[]>([]);
     const [loadingCapabilities, setLoadingCapabilities] = useState(true);
@@ -452,7 +452,7 @@ export const SettingsView = ({ initialTab = 'general' }: { initialTab?: string }
                         if (!groups[source]) {
                             groups[source] = {
                                 id: source,
-                                label: source.charAt(0).toUpperCase() + source.slice(1).replace(/_/g, ' '),
+                                label: t.source_label || source.charAt(0).toUpperCase() + source.slice(1).replace(/_/g, ' '),
                                 description: `Tools from ${source}`,
                                 tools: [],
                                 toolDetails: [],
@@ -531,6 +531,7 @@ export const SettingsView = ({ initialTab = 'general' }: { initialTab?: string }
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: draftMcpServer.name,
+                    label: draftMcpServer.label,
                     server_type: draftMcpServer.server_type,
                     command: draftMcpServer.command,
                     args: argsList,
@@ -542,7 +543,7 @@ export const SettingsView = ({ initialTab = 'general' }: { initialTab?: string }
             if (res.ok) {
                 const data = await res.json();
                 dispatch(addMcpServer(data.config));
-                setDraftMcpServer({ name: '', server_type: 'stdio', command: '', args: '', env: [], url: '', token: '' });
+                setDraftMcpServer({ name: '', label: '', server_type: 'stdio', command: '', args: '', env: [], url: '', token: '' });
 
                 if (data.status === 'oauth_pending') {
                     setLastMcpConnected(false);
