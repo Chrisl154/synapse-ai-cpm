@@ -12,7 +12,7 @@ export type Tab = 'general' | 'models' | 'workspace' | 'memory' | 'agents' | 'or
 // Tools auto-injected by the backend per agent type.
 // Shown as 'DEFAULT' in the UI and not editable.
 export const AUTO_TOOLS_BY_TYPE: Record<string, string[]> = {
-    all_types: ['query_past_conversations', 'sequentialthinking', 'read_file_chunk', 'search_file', 'read_json_chunk', 'search_json', 'grep', 'glob'],
+    all_types: ['sequentialthinking', 'read_file', 'read_multiple_files', 'search_files', 'list_directory', 'get_file_info', 'grep', 'glob', 'read_file_by_lines'],
     code: ['search_codebase'],
     orchestrator: [],
 };
