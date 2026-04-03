@@ -174,6 +174,7 @@ async def run_agent_step(
     source: str = "chat",
     run_id: str | None = None,
     images: list[str] | None = None,
+    system_prompt_extra: str | None = None,
 ):
     """Lower-level single-agent ReAct execution.
 
@@ -206,6 +207,10 @@ async def run_agent_step(
         _get_session_state, server_module.memory_store, agent_id=agent_id_for_session,
         turns_remaining=max_turns, max_turns=max_turns,
     )
+
+    # Inject orchestration-awareness block when called from an orchestration step
+    if system_prompt_extra:
+        system_prompt_text = system_prompt_text + "\n\n" + system_prompt_extra
 
     current_settings = load_settings()
     # Per-agent model override: use agent's model if set, else fall back to default
