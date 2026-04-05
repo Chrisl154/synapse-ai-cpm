@@ -8,7 +8,7 @@
  *
  * Port resolution priority (mirrors next.config.ts logic):
  *   Frontend : SYNAPSE_FRONTEND_PORT → 3000
- *   Backend  : BACKEND_URL → (derived from SYNAPSE_BACKEND_PORT) → 8000
+ *   Backend  : BACKEND_URL → (derived from SYNAPSE_BACKEND_PORT) → 8765
  *
  * override=false: real shell-exported env vars always win over .env values.
  */
@@ -35,7 +35,7 @@ if (fs.existsSync(rootEnv)) {
 
 // ── 2. Auto-derive BACKEND_URL from SYNAPSE_BACKEND_PORT if not set ──────────
 if (!process.env.BACKEND_URL) {
-  const backendPort = process.env.SYNAPSE_BACKEND_PORT || "8000";
+  const backendPort = process.env.SYNAPSE_BACKEND_PORT || "8765";
   process.env.BACKEND_URL = `http://127.0.0.1:${backendPort}`;
 }
 

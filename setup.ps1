@@ -310,12 +310,45 @@ function Start-SynapseSetup {
         Write-Host "   Location: $InstallDir" -ForegroundColor Cyan
         Write-Host ""
 
-        # Pull latest changes
-        Write-Host "Checking for updates..." -ForegroundColor Cyan
+        # ---------------------------------------------------------------
+        # 1. Stop any running services
+        # ---------------------------------------------------------------
+        Write-Host "==> Stopping running services..." -ForegroundColor Cyan
+        $SynapseBat = Join-Path $InstallDir "bin\synapse.bat"
+        if (Test-Path $SynapseBat) {
+            try {
+                & $SynapseBat stop 2>&1 | Out-Null
+                Write-Host "[OK] Services stopped." -ForegroundColor Green
+            } catch {
+                Write-Host "[WARN] Could not run synapse stop cleanly." -ForegroundColor Yellow
+            }
+        }
+        # Fallback: kill via PID files
+        $RunDir = Join-Path $InstallDir "run"
+        foreach ($pidFile in @("backend.pid", "frontend.pid")) {
+            $pidPath = Join-Path $RunDir $pidFile
+            if (Test-Path $pidPath) {
+                try {
+                    $pid = [int](Get-Content $pidPath -ErrorAction SilentlyContinue)
+                    taskkill /F /T /PID $pid 2>&1 | Out-Null
+                    Remove-Item $pidPath -Force -ErrorAction SilentlyContinue
+                    Write-Host "[OK] Stopped PID $pid ($pidFile)." -ForegroundColor Green
+                } catch {
+                    Write-Host "[WARN] Could not stop $pidFile process." -ForegroundColor Yellow
+                }
+            }
+        }
+        Start-Sleep -Seconds 2
+
+        # ---------------------------------------------------------------
+        # 2. Pull latest changes
+        # ---------------------------------------------------------------
+        Write-Host ""
+        Write-Host "==> Pulling latest changes..." -ForegroundColor Cyan
         $pullResult = git -C $InstallDir pull --ff-only 2>&1
         if ($LASTEXITCODE -eq 0) {
             if ($pullResult -match "Already up to date") {
-                Write-Host "[OK] Already up to date." -ForegroundColor Green
+                Write-Host "[OK] Already up to date -- no code changes." -ForegroundColor Green
             } else {
                 Write-Host "[OK] Updated to the latest version." -ForegroundColor Green
                 Write-Host $pullResult
@@ -325,8 +358,35 @@ function Start-SynapseSetup {
             Write-Host $pullResult
         }
 
+        # ---------------------------------------------------------------
+        # 3. Rebuild via setup.py (backend + frontend)
+        # ---------------------------------------------------------------
         Write-Host ""
-        Write-Host "To start Synapse, open a terminal and run:" -ForegroundColor White
+        Write-Host "==> Rebuilding Synapse AI..." -ForegroundColor Cyan
+        $SetupScript = Join-Path $InstallDir "setup.py"
+
+        # We need Python and Node to be available for the rebuild.
+        # Run a lightweight prerequisite check (no install, just detect).
+        Invoke-PrerequisitesCheck
+
+        # Invoke setup.py with the --upgrade flag so it skips the wizard
+        # and goes straight to rebuild.
+        if ($global:PYTHON_CMD -match " ") {
+            $parts = $global:PYTHON_CMD -split " "
+            & $parts[0] $parts[1..($parts.Length - 1)] $SetupScript --upgrade
+        } else {
+            & $global:PYTHON_CMD $SetupScript --upgrade
+        }
+
+        # ---------------------------------------------------------------
+        # 4. Show instructions
+        # ---------------------------------------------------------------
+        Write-Host ""
+        Write-Host "======================================================" -ForegroundColor Green
+        Write-Host "   Synapse AI has been updated and rebuilt!" -ForegroundColor Green
+        Write-Host "======================================================" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "To start Synapse:" -ForegroundColor White
         Write-Host "  synapse start" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "Other commands:" -ForegroundColor Gray

@@ -353,9 +353,9 @@ cp .env.example .env
 |---|---|---|
 | `SYNAPSE_DATA_DIR` | `~/.synapse/data` | Where agents store files, memory, and state |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama endpoint |
-| `SYNAPSE_BACKEND_PORT` | `8000` | Backend API port |
+| `SYNAPSE_BACKEND_PORT` | `8765` | Backend API port |
 | `SYNAPSE_FRONTEND_PORT` | `3000` | Frontend UI port |
-| `BACKEND_URL` | `http://127.0.0.1:8000` | Backend URL as seen by Next.js server (set in Docker) |
+| `BACKEND_URL` | `http://127.0.0.1:8765` | Backend URL as seen by Next.js server (set in Docker) |
 | `CORS_ORIGINS` | `http://localhost:3000` | Allowed CORS origins |
 
 ---
