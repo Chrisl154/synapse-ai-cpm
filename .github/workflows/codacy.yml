@@ -100,10 +100,15 @@ jobs:
           # Inject unique IDs so GitHub accepts multiple tools in one file
           if "runs" in data:
               for i, run in enumerate(data["runs"]):
-                  tool_name = run.get("tool", {}).get("driver", {}).get("name", f"tool-{i}")
+                  # Safely get the tool name without f-string quote collisions
+                  tool_name = run.get("tool", {}).get("driver", {}).get("name", "tool")
+                  clean_name = tool_name.lower().replace(" ", "-")
+                  
                   if "automationDetails" not in run:
                       run["automationDetails"] = {}
-                  run["automationDetails"]["id"] = f"codacy-{tool_name.lower().replace(\" \", \"-\")}-{i}"
+                  
+                  # Apply the formatted ID
+                  run["automationDetails"]["id"] = f"codacy-{clean_name}-{i}"
 
           # Write safely to disk
           with open("results.sarif", "w") as f:
