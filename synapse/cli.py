@@ -60,7 +60,7 @@ if not os.path.isabs(_raw_data_dir):
 else:
     DATA_DIR = Path(_raw_data_dir).resolve()
 
-DEFAULT_BACKEND_PORT = int(os.getenv("SYNAPSE_BACKEND_PORT", "8000"))
+DEFAULT_BACKEND_PORT = int(os.getenv("SYNAPSE_BACKEND_PORT", "8765"))
 DEFAULT_FRONTEND_PORT = int(os.getenv("SYNAPSE_FRONTEND_PORT", "3000"))
 
 # Runtime ports (may be overridden by CLI args -- module-level aliases kept for

@@ -58,7 +58,7 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 CREDENTIALS_FILE = os.path.join(DATA_DIR, "credentials.json")
 
 # Port defaults -- read from env first so an existing .env is respected
-DEFAULT_BACKEND_PORT = int(os.environ.get("SYNAPSE_BACKEND_PORT", "8000"))
+DEFAULT_BACKEND_PORT = int(os.environ.get("SYNAPSE_BACKEND_PORT", "8765"))
 DEFAULT_FRONTEND_PORT = int(os.environ.get("SYNAPSE_FRONTEND_PORT", "3000"))
 
 IS_WIN = sys.platform == "win32"
@@ -1616,15 +1616,124 @@ def _write_install_marker():
     ok(f"Install marker written.")
 
 
+def _stop_running_services(install_dir):
+    """Stop any running Synapse services before rebuilding."""
+    step("Stopping Running Services")
+    synapse_bin = os.path.join(install_dir, "bin", "synapse" + (".bat" if IS_WIN else ""))
+    stopped = False
+
+    # Try calling `synapse stop` via the installed bin script
+    if os.path.exists(synapse_bin):
+        try:
+            result = subprocess.run(
+                [synapse_bin, "stop"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                ok("Services stopped.")
+                stopped = True
+            else:
+                warn("synapse stop returned non-zero; trying PID files...")
+        except Exception as e:
+            warn(f"Could not invoke synapse stop: {e}")
+
+    # Fallback: kill PIDs recorded in run/ directory
+    if not stopped:
+        run_dir = os.path.join(install_dir, "run")
+        for pid_file in ("backend.pid", "frontend.pid"):
+            pid_path = os.path.join(run_dir, pid_file)
+            if os.path.exists(pid_path):
+                try:
+                    with open(pid_path) as pf:
+                        pid = int(pf.read().strip())
+                    if IS_WIN:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(pid)],
+                            capture_output=True,
+                        )
+                    else:
+                        import signal as _sig
+                        try:
+                            os.killpg(os.getpgid(pid), _sig.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                    ok(f"Stopped PID {pid} (from {pid_file}).")
+                    os.remove(pid_path)
+                except Exception as e:
+                    warn(f"Could not stop process from {pid_file}: {e}")
+
+    # Brief pause to let ports free up
+    import time as _time
+    _time.sleep(2)
+
+
+def _rebuild_backend(install_dir):
+    """Re-install backend Python dependencies."""
+    step("Rebuilding Backend")
+    backend_dir = os.path.join(install_dir, "backend")
+    venv_dir    = os.path.join(backend_dir, "venv")
+    python_exe  = os.path.join(venv_dir, "Scripts" if IS_WIN else "bin",
+                               "python" + (".exe" if IS_WIN else ""))
+
+    if not os.path.exists(python_exe):
+        warn("Virtual environment not found -- creating one now...")
+        subprocess.check_call([sys.executable, "-m", "venv", venv_dir])
+        ok("Virtual environment created.")
+
+    pip_cmd = [python_exe, "-m", "pip", "install"]
+    req_txt  = os.path.join(backend_dir, "requirements.txt")
+
+    info("Upgrading pip...")
+    subprocess.run([python_exe, "-m", "pip", "install", "--upgrade", "pip"],
+                   capture_output=True)
+
+    info("Installing / upgrading backend requirements...")
+    subprocess.check_call(pip_cmd + ["-r", req_txt])
+
+    info("Reinstalling Synapse package (editable mode)...")
+    subprocess.check_call([python_exe, "-m", "pip", "install", "-e", install_dir])
+    ok("Backend dependencies updated.")
+
+
+def _rebuild_frontend(install_dir):
+    """Re-install and rebuild the frontend."""
+    step("Rebuilding Frontend")
+    frontend_dir = os.path.join(install_dir, "frontend")
+
+    if IS_WIN:
+        npm = _find_npm_cmd_win()
+    else:
+        import shutil as _sh
+        npm = _sh.which("npm")
+        if not npm:
+            warn("npm not found -- skipping frontend rebuild.")
+            return
+
+    info("Running npm install...")
+    subprocess.check_call([npm, "install"], cwd=frontend_dir)
+
+    info("Building frontend...")
+    subprocess.check_call([npm, "run", "build"], cwd=frontend_dir)
+    ok("Frontend rebuilt successfully.")
+
+
 def _handle_already_installed(install_dir):
-    """Git-pull the existing install, show start instructions, and exit."""
+    """Stop services, pull latest, rebuild, show start instructions."""
     print(f"\n{C.BOLD}{C.GREEN}{'=' * 54}{C.RESET}")
     print(f"{C.BOLD}{C.GREEN}   Synapse AI is already installed!{C.RESET}")
     print(f"{C.BOLD}{C.GREEN}{'=' * 54}{C.RESET}")
     print(f"\n   Location: {_c(C.CYAN, install_dir)}\n")
 
-    # Pull latest changes
-    step("Updating Synapse AI")
+    # ------------------------------------------------------------------
+    # 1. Stop any running services before we touch the code
+    # ------------------------------------------------------------------
+    _stop_running_services(install_dir)
+
+    # ------------------------------------------------------------------
+    # 2. Pull latest changes
+    # ------------------------------------------------------------------
+    step("Pulling Latest Changes")
+    updated = False
     try:
         result = subprocess.run(
             ["git", "-C", install_dir, "pull", "--ff-only"],
@@ -1633,12 +1742,12 @@ def _handle_already_installed(install_dir):
         if result.returncode == 0:
             output = result.stdout.strip()
             if "Already up to date" in output:
-                ok("Already up to date -- no changes.")
+                ok("Already up to date -- no code changes.")
             else:
                 ok("Updated to the latest version.")
-                if output:
-                    for line in output.splitlines():
-                        info(f"  {line}")
+                updated = True
+                for line in output.splitlines():
+                    info(f"  {line}")
         else:
             warn(f"git pull exited with code {result.returncode}.")
             if result.stderr.strip():
@@ -1648,6 +1757,24 @@ def _handle_already_installed(install_dir):
     except Exception as e:
         warn(f"Update check failed: {e}")
 
+    # ------------------------------------------------------------------
+    # 3. Rebuild backend and frontend
+    # ------------------------------------------------------------------
+    try:
+        _rebuild_backend(install_dir)
+    except Exception as e:
+        warn(f"Backend rebuild failed: {e}")
+
+    try:
+        _rebuild_frontend(install_dir)
+    except Exception as e:
+        warn(f"Frontend rebuild failed: {e}")
+
+    # ------------------------------------------------------------------
+    # 4. Show instructions
+    # ------------------------------------------------------------------
+    print()
+    print(f"{C.BOLD}{C.GREEN}Synapse AI has been updated and rebuilt!{C.RESET}")
     print()
     print(f"{C.BOLD}To start Synapse:{C.RESET}")
     print(f"   {_c(C.CYAN, 'synapse start')}")
@@ -1900,12 +2027,35 @@ def ask_startup_on_boot(cfg):
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    # ------------------------------------------------------------------
+    # --upgrade flag: skip the wizard, just rebuild and exit
+    # ------------------------------------------------------------------
+    upgrade_mode = "--upgrade" in sys.argv
+
+    if upgrade_mode:
+        print(f"\n{C.BOLD}{C.CYAN}{'=' * 50}{C.RESET}")
+        print(f"{C.BOLD}{C.CYAN}   Synapse AI -- Rebuild{C.RESET}")
+        print(f"{C.BOLD}{C.CYAN}{'=' * 50}{C.RESET}\n")
+        check_python()
+        check_npm()
+        try:
+            _rebuild_backend(ROOT_DIR)
+        except Exception as e:
+            warn(f"Backend rebuild failed: {e}")
+        try:
+            _rebuild_frontend(ROOT_DIR)
+        except Exception as e:
+            warn(f"Frontend rebuild failed: {e}")
+        print()
+        ok("Rebuild complete.")
+        sys.exit(0)
+
     print(f"\n{C.BOLD}{C.CYAN}{'=' * 50}{C.RESET}")
     print(f"{C.BOLD}{C.CYAN}   Synapse AI -- Setup Wizard{C.RESET}")
     print(f"{C.BOLD}{C.CYAN}{'=' * 50}{C.RESET}\n")
 
     # ------------------------------------------------------------------
-    # Already-installed: pull latest + show start instructions, then exit
+    # Already-installed: stop services, rebuild, show instructions
     # ------------------------------------------------------------------
     already_installed, install_dir = _is_already_installed()
     if already_installed:
@@ -2024,5 +2174,7 @@ def main():
         sys.exit(0)
 
 
+
 if __name__ == "__main__":
     main()
+
