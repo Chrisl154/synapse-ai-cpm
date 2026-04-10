@@ -34,9 +34,9 @@ jobs:
               enabled: true
             checkov:
               enabled: true
-            trivy:
-              enabled: true
             eslint:
+              enabled: true
+            trivy:
               enabled: false
             stylelint:
               enabled: false
@@ -45,13 +45,13 @@ jobs:
       # 2. Run Codacy Analysis (without the tool: flag so it reads .codacy.yaml)
       - name: Run Codacy Analysis CLI
         uses: codacy/codacy-analysis-cli-action@master
+        timeout-minutes: 20
         continue-on-error: true
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           verbose: true
           output: results.sarif
           format: sarif
-          gh-code-scanning-compat: true
           max-allowed-issues: 2147483647
           skip-uncommitted-files-check: true
           exclude-paths: >
