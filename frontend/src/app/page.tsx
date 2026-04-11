@@ -242,7 +242,7 @@ function WelcomeScreen({ agentName, onPrompt, onNavigate, showExamplesBanner, on
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[calc(100vh-56px)] px-4 pb-36 pt-10 select-none">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-56px)] px-4 pb-36 pt-10 select-none">
       {/* ── Welcome Examples Banner (12-day, session-dismissible) ── */}
       {showExamplesBanner && (
         <div className="w-full max-w-2xl mb-8 relative overflow-hidden rounded-sm border border-violet-700/50 bg-gradient-to-br from-violet-950 via-purple-950/95 to-indigo-950 backdrop-blur-sm shadow-lg shadow-violet-950/40">
@@ -251,13 +251,13 @@ function WelcomeScreen({ agentName, onPrompt, onNavigate, showExamplesBanner, on
           <div className="relative px-4 py-3 flex flex-col gap-2.5">
             {/* Top row: icon + headline + close */}
             <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-1.5 rounded-sm bg-violet-700/40 border border-violet-600/30">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="p-1.5 rounded-sm bg-violet-700/40 border border-violet-600/30 shrink-0">
                   <Sparkles className="h-3.5 w-3.5 text-violet-300" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-[12px] font-bold text-white tracking-wide">Get started in seconds</p>
-                  <p className="text-[11px] text-violet-300/80 font-mono">Pre-built agents, orchestrations &amp; MCP servers — ready to explore</p>
+                  <p className="text-[11px] text-violet-300/80 font-mono break-words">Pre-built agents, orchestrations &amp; MCP servers — ready to explore</p>
                 </div>
               </div>
               <button
@@ -270,9 +270,9 @@ function WelcomeScreen({ agentName, onPrompt, onNavigate, showExamplesBanner, on
               </button>
             </div>
             {/* Bottom row: teaser pills + CTA */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {['Web research agent', 'Multi-step orchestration', 'GitHub MCP'].map(label => (
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              <div className="flex items-center gap-1.5 flex-wrap justify-center sm:justify-start">
+                {['Web research agent', 'Multi-step orchestration', 'MCP Servers'].map(label => (
                   <span key={label} className="px-2 py-0.5 text-[10px] font-mono text-violet-300 bg-violet-800/40 border border-violet-700/40 rounded-sm">
                     {label}
                   </span>
@@ -282,7 +282,7 @@ function WelcomeScreen({ agentName, onPrompt, onNavigate, showExamplesBanner, on
               <button
                 id="examples-banner-link"
                 onClick={() => onNavigate('/settings/import_export?tab=examples')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white transition-colors rounded-sm cursor-pointer shrink-0 shadow-sm shadow-violet-900/50"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white transition-colors rounded-sm cursor-pointer shrink-0 w-full sm:w-auto shadow-sm shadow-violet-900/50"
               >
                 <Sparkles className="h-3 w-3" /> Browse Examples
               </button>
