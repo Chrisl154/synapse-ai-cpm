@@ -12,6 +12,7 @@ No API key needed — tool calling is emulated via system prompt injection + <to
 """
 import os
 import json
+import tempfile
 import asyncio
 import base64
 import httpx
@@ -221,13 +222,13 @@ def _make_aws_client(service_name: str, region: str, settings: dict):
 
 # Maps cli.* model names to their CLI binary + flags
 _CLI_COMMANDS: dict[str, list[str]] = {
-    "cli.claude": ["claude", "-p"],
+    "cli.claude": ["claude", "-p", "--verbose"],
     "cli.gemini": ["gemini", "--prompt", ""],
-    "cli.codex":  ["codex"],
+    "cli.codex":  ["codex", "exec", "--full-auto"],
 }
 
 # Seconds to wait for a CLI process before giving up
-_CLI_TIMEOUT = 120.0
+_CLI_TIMEOUT = 300.0
 
 
 def _build_cli_prompt(
@@ -280,6 +281,8 @@ def _build_cli_prompt(
 async def call_cli_provider(
     cli_model: str,
     full_prompt: str,
+    sys_prompt: str | None = None,
+    messages: list[dict] | None = None,
     timeout: float = _CLI_TIMEOUT,
 ) -> tuple[str, int, int]:
     """Spawn a local CLI binary, feed it the full context, and return the response.
@@ -323,9 +326,11 @@ async def call_cli_provider(
             
             # Thinking / Effort overrides
             if "-thinking" in variant or "-max" in variant:
-                cmd.extend(["--effort", "max"])
+                cmd.extend(["--effort", "medium"])
             elif "-high" in variant:
                 cmd.extend(["--effort", "high"])
+            else:
+                cmd.extend(["--effort", "low"])
 
         elif base_cli == "cli.gemini":
             if "pro" in variant:
@@ -333,24 +338,87 @@ async def call_cli_provider(
             elif "flash" in variant:
                 cmd.extend(["--model", "flash"])
 
+        elif base_cli == "cli.codex":
+            # Pass the variant directly as the model name (e.g. o3, o4-mini, gpt-4o)
+            cmd.extend(["-m", variant])
+
+    # codex exec requires "-" as the positional PROMPT arg to signal stdin input.
+    # Append it after all option flags are resolved so it stays last.
+    if base_cli == "cli.codex":
+        cmd.append("-")
+
     import shutil
     executable = shutil.which(cmd[0])
     if not executable:
         raise LLMError(f"CLI binary '{cmd[0]}' exactly resolved by shutil.which not found. Check your PATH.")
-        
-    print(f"DEBUG: 🖥️  CLI provider '{cli_model}' — spawning subprocess: {' '.join(cmd)}", flush=True)
+
+    env = os.environ.copy()
+    temp_sys_prompt_file = None
+    temp_input_file = None
+    temp_output_file = None
+
+    # Use backend/data/tmp for temp files — avoids cross-OS permission issues
+    # with the system temp dir and keeps all runtime files under the project root.
+    _tmp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "tmp")
+    os.makedirs(_tmp_dir, exist_ok=True)
 
     try:
+        if base_cli == "cli.claude" and sys_prompt:
+            # Write sys_prompt to a temp file and pass via --system-prompt-file.
+            temp_sys_prompt_file = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", prefix="claude_sys_prompt_", delete=False,
+                encoding="utf-8", dir=_tmp_dir
+            )
+            temp_sys_prompt_file.write(sys_prompt)
+            temp_sys_prompt_file.flush()
+            temp_sys_prompt_file.close()
+            cmd.extend(["--system-prompt-file", temp_sys_prompt_file.name])
+
+            # stdin carries only the content after the sys_prompt (tools + messages).
+            # full_prompt = sys_prompt.strip() + "\n\n" + rest, so strip the prefix.
+            prefix = sys_prompt.strip()
+            stdin_payload = full_prompt[len(prefix):].lstrip("\n") if full_prompt.startswith(prefix) else full_prompt
+        else:
+            stdin_payload = full_prompt
+
+        # Write stdin payload to a temp file and feed it as stdin (like `< file`),
+        # avoiding large string pipes and keeping content out of the process list.
+        temp_input_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", prefix="claude_input_", delete=False,
+            encoding="utf-8", dir=_tmp_dir
+        )
+        temp_input_file.write(stdin_payload)
+        temp_input_file.flush()
+        temp_input_file.close()
+
+        # codex exec: use -o to capture only the final agent message, avoiding TUI noise
+        if base_cli == "cli.codex":
+            temp_output_file = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", prefix="codex_output_", delete=False,
+                encoding="utf-8", dir=_tmp_dir
+            )
+            temp_output_file.close()
+            cmd.extend(["-o", temp_output_file.name])
+
+        print(f"DEBUG: 🖥️  CLI provider '{cli_model}' — spawning subprocess: {' '.join(cmd)}", flush=True)
+
+        stdin_source = open(temp_input_file.name, "rb") if temp_input_file else asyncio.subprocess.PIPE
+
         process = await asyncio.create_subprocess_exec(
             executable,
             *cmd[1:],
-            stdin=asyncio.subprocess.PIPE,
+            stdin=stdin_source,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env
         )
+
+        if temp_input_file:
+            stdin_source.close()
+
         try:
             stdout_b, stderr_b = await asyncio.wait_for(
-                process.communicate(input=full_prompt.encode("utf-8")),
+                process.communicate(),
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
@@ -375,8 +443,25 @@ async def call_cli_provider(
                 )
             print(f"DEBUG: 🖥️  CLI stderr: {stderr_text[:300]}", flush=True)
 
-        raw = stdout_b.decode("utf-8", errors="replace")
+        # codex exec writes just the final agent message to the -o file; use that
+        # to avoid parsing the TUI header/footer noise from stdout.
+        if base_cli == "cli.codex" and temp_output_file:
+            try:
+                with open(temp_output_file.name, "r", encoding="utf-8", errors="replace") as f:
+                    raw = f.read()
+            except Exception:
+                raw = stdout_b.decode("utf-8", errors="replace")
+        else:
+            raw = stdout_b.decode("utf-8", errors="replace")
         clean = ANSI_ESCAPE.sub("", raw).strip()
+
+        # claude CLI writes "Not logged in" to stdout (not stderr) — catch it here
+        if any(p in clean.lower() for p in AUTH_PATTERNS):
+            raise LLMError(
+                f"CLI provider '{cli_model}' is not authenticated.\n"
+                f"Run 'claude' in your terminal and complete the login flow, then retry.\n"
+                f"Details: {clean[:300]}"
+            )
 
         if not clean:
             raise LLMError(
@@ -400,6 +485,13 @@ async def call_cli_provider(
         )
     except Exception as e:
         raise LLMError(f"CLI provider '{cli_model}' unexpected error: {e}")
+    finally:
+        for f in [temp_sys_prompt_file, temp_input_file, temp_output_file]:
+            if f:
+                try:
+                    os.unlink(f.name)
+                except Exception:
+                    pass
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -1374,6 +1466,8 @@ async def generate_response(
             result_text, input_tokens, output_tokens = await call_cli_provider(
                 cli_model=current_model,
                 full_prompt=cli_full_prompt,
+                sys_prompt=augmented_system,
+                messages=messages_for_cli
             )
         except LLMError:
             raise

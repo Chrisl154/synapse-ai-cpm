@@ -226,6 +226,21 @@ async def run_agent_step(
     agent_system_template = _inject_repo_context(active_agent, agent_system_template)
     agent_system_template = _inject_db_context(active_agent, agent_system_template)
 
+    current_settings = load_settings()
+    # Per-agent model override: use agent's model if set, else fall back to default.
+    # Treat None, empty string, or "default" as "use the global default model".
+    agent_model = active_agent.get("model")
+    if agent_model and agent_model.strip().lower() in ("", "default"):
+        agent_model = None
+    current_model = agent_model if agent_model else current_settings.get("model", "mistral")
+    # Auto-detect mode from model name instead of relying on global mode
+    from core.llm_providers import detect_mode_from_model
+    mode = detect_mode_from_model(current_model)
+    # Only inject tools into the system prompt for providers without native tool calling.
+    # Cloud (Anthropic/OpenAI/Gemini/Grok/DeepSeek) and local Ollama receive tools via
+    # the API tools= param, so injecting them into the system prompt is redundant.
+    inject_tools_in_prompt = mode in ("cli", "bedrock")
+
     # Aggregate tools & build system prompt
     custom_tools = load_custom_tools()
     print(f"DEBUG RUN_AGENT: start agent_id={agent_id_for_session}, sessions={list(server_module.agent_sessions.keys())}", flush=True)
@@ -239,22 +254,12 @@ async def run_agent_step(
         agent_system_template, tools_json, session_id,
         _get_session_state, server_module.memory_store, agent_id=agent_id_for_session,
         turns_remaining=max_turns, max_turns=max_turns,
+        inject_tools=inject_tools_in_prompt,
     )
 
     # Inject orchestration-awareness block when called from an orchestration step
     if system_prompt_extra:
         system_prompt_text = system_prompt_text + "\n\n" + system_prompt_extra
-
-    current_settings = load_settings()
-    # Per-agent model override: use agent's model if set, else fall back to default.
-    # Treat None, empty string, or "default" as "use the global default model".
-    agent_model = active_agent.get("model")
-    if agent_model and agent_model.strip().lower() in ("", "default"):
-        agent_model = None
-    current_model = agent_model if agent_model else current_settings.get("model", "mistral")
-    # Auto-detect mode from model name instead of relying on global mode
-    from core.llm_providers import detect_mode_from_model
-    mode = detect_mode_from_model(current_model)
 
     async def generate_response(prompt_msg, sys_prompt, tools=None, history_messages=None, memory_context_text="", images_for_turn=None, tool_name_for_log=None):
         return await llm_generate_response(
@@ -324,6 +329,7 @@ async def run_agent_step(
                 agent_system_template, tools_json, session_id,
                 _get_session_state, server_module.memory_store, agent_id=agent_id_for_session,
                 turns_remaining=turns_remaining, max_turns=max_turns,
+                inject_tools=inject_tools_in_prompt,
             )
             # Re-inject orchestration context (system_prompt_extra) on every turn.
             # This block is built once before the loop and must survive every
