@@ -175,6 +175,15 @@ def _make_aws_client(service_name: str, region: str, settings: dict):
             lower = bedrock_api_key.lower()
         if lower.startswith("bearer "):
             bedrock_api_key = bedrock_api_key.split(" ", 1)[1].strip()
+            lower = bedrock_api_key.lower()
+
+        # bedrock-api-key format (temporary keys) must be Base64-encoded before
+        # being used as a bearer token. AWS decodes it server-side; sending the
+        # raw value causes "Base64 decoding failed" AccessDeniedException.
+        # ABSK keys are already in the expected format and must NOT be re-encoded.
+        if lower.startswith("bedrock-api-key"):
+            import base64
+            bedrock_api_key = base64.b64encode(bedrock_api_key.encode()).decode()
 
     # If a Bedrock API key is provided, prefer it and avoid mixing auth mechanisms.
     if bedrock_api_key:
