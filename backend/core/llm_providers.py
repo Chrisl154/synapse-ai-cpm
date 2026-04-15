@@ -1245,18 +1245,80 @@ async def call_deepseek(model, messages, system, api_key, tools=None, images=Non
     raise LLMError(error_msg)
 
 
+async def _bedrock_converse_https(
+    region: str, api_key: str, model_id: str,
+    messages: list, system_blocks: list, max_tokens: int,
+) -> dict:
+    """Call Bedrock Converse via direct HTTPS for short-term bedrock-api-key-**** keys.
+
+    Mirrors the working pattern from _bedrock_management_get in routes/data.py.
+    Bypasses boto3 entirely so auth cannot be interfered with.
+    Per AWS docs, the key is sent as-is: Authorization: Bearer {api_key} — no encoding.
+    Image bytes are base64-encoded for JSON serialisation (boto3 does this automatically
+    on its path; we replicate it here manually).
+    """
+    import urllib.request
+    import urllib.error
+
+    url = f"https://bedrock-runtime.{region}.amazonaws.com/model/{model_id}/converse"
+
+    def _serialize_content(content_blocks: list) -> list:
+        result = []
+        for block in content_blocks:
+            if "text" in block:
+                result.append({"text": block["text"]})
+            elif "image" in block:
+                img = block["image"]
+                raw = (img.get("source") or {}).get("bytes", b"")
+                result.append({
+                    "image": {
+                        "format": img.get("format", "png"),
+                        "source": {
+                            "bytes": base64.b64encode(raw).decode() if isinstance(raw, bytes) else raw
+                        },
+                    }
+                })
+        return result
+
+    payload = {
+        "messages": [
+            {"role": m["role"], "content": _serialize_content(m.get("content") or [])}
+            for m in messages
+        ],
+        "system": system_blocks,
+        "inferenceConfig": {"maxTokens": max_tokens},
+    }
+
+    def _run():
+        body = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=900) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode(errors="replace")
+            raise RuntimeError(f"HTTP {e.code}: {err_body}") from e
+
+    return await asyncio.to_thread(_run)
+
+
 async def _bedrock_converse_direct(
     region: str, api_key: str, model_id: str,
     messages: list, system_blocks: list, max_tokens: int,
 ) -> dict:
     """Call Bedrock Converse via boto3 with UNSIGNED auth + before-send bearer injection.
 
-    boto3's before-send event fires right before urllib3 sends the HTTP request.
-    We inject Authorization: Bearer {api_key} at that point so botocore signing
+    Used for long-term ABSK keys. boto3's before-send event fires right before urllib3
+    sends the HTTP request; we inject Authorization: Bearer {api_key} so botocore signing
     (disabled via UNSIGNED) cannot interfere.
-
-    Both ABSK (long-term, 132-char) and bedrock-api-key (short-term, 1000+char)
-    keys are sent as-is — no prefix stripping — matching AWS documentation.
     boto3 handles image-bytes serialisation natively; no manual base64 conversion needed.
     """
     def _make_client():
@@ -1406,11 +1468,18 @@ async def call_bedrock(model_id, messages, system, region, settings, images=None
             if hasattr(bedrock, "converse") or bedrock_api_key:
                 try:
                     if bedrock_api_key:
-                        # Bypass boto3 — botocore mangles bedrock-api-key format keys
-                        resp = await _bedrock_converse_direct(
-                            effective_region, bedrock_api_key, invocation_model_id,
-                            normalized_messages, system_blocks, max_tokens,
-                        )
+                        if bedrock_api_key.lower().startswith('bedrock-api-key'):
+                            # Short-term key: direct HTTPS bypasses boto3 entirely
+                            resp = await _bedrock_converse_https(
+                                effective_region, bedrock_api_key, invocation_model_id,
+                                normalized_messages, system_blocks, max_tokens,
+                            )
+                        else:
+                            # ABSK (long-term): boto3 with UNSIGNED + before-send injection
+                            resp = await _bedrock_converse_direct(
+                                effective_region, bedrock_api_key, invocation_model_id,
+                                normalized_messages, system_blocks, max_tokens,
+                            )
                     else:
                         resp = await _converse_call()
                     msg = (((resp or {}).get("output") or {}).get("message") or {})
