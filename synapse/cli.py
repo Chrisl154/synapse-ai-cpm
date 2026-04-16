@@ -149,6 +149,10 @@ DEFAULT_JSON_FILES = {
 BACKEND_PID_FILE = DATA_DIR / "backend.pid"
 FRONTEND_PID_FILE = DATA_DIR / "frontend.pid"
 
+# Log files (written when running as a daemon)
+BACKEND_LOG_FILE = DATA_DIR / "backend.log"
+FRONTEND_LOG_FILE = DATA_DIR / "frontend.log"
+
 
 def _find_node_exe_win():
     """Windows: find node.exe by probing known install locations (bypasses stale PATH cache).
@@ -282,6 +286,9 @@ def start_backend(detach: bool = False, port: int | None = None, profile: bool =
             kwargs["preexec_fn"] = os.setsid
         else:
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        log_fh = open(BACKEND_LOG_FILE, "a")
+        kwargs["stdout"] = log_fh
+        kwargs["stderr"] = log_fh
     return subprocess.Popen(
         [sys.executable, str(BACKEND_DIR / "main.py")],
         cwd=str(BACKEND_DIR),
@@ -310,6 +317,9 @@ def start_frontend(detach: bool = False, port: int | None = None, backend_port: 
             kwargs["preexec_fn"] = os.setsid
         else:
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        log_fh = open(FRONTEND_LOG_FILE, "a")
+        kwargs["stdout"] = log_fh
+        kwargs["stderr"] = log_fh
     npm = _npm_command()
     return subprocess.Popen(
         [npm, "start"],
@@ -511,7 +521,7 @@ def _start_command(
         sys.exit(1)
 
     url = f"http://localhost:{effective_frontend_port}"
-    if not no_browser and not detach:
+    if not no_browser:
         threading.Thread(target=open_browser, args=(url,), daemon=True).start()
 
     print(f"\nSynapse is running at {url}")
@@ -717,6 +727,46 @@ def _upgrade_command():
         print(f"\nIf 'synapse' is not found in your terminal, run:")
         print(f"  export PATH=\"{bin_dir}:$PATH\"")
         print("(Already saved to ~/.bashrc / ~/.zshrc for new terminals.)")
+
+
+def _logs_command(service: str = "all", lines: int = 50, follow: bool = False):
+    """Tail backend and/or frontend log files."""
+    log_map = {
+        "backend":  BACKEND_LOG_FILE,
+        "frontend": FRONTEND_LOG_FILE,
+    }
+    targets = list(log_map.items()) if service == "all" else [(service, log_map[service])]
+
+    for name, path in targets:
+        if not path.exists():
+            print(f"  [{name}] No log file found at {path}")
+            print(f"  (Start Synapse first with: synapse start)")
+        else:
+            print(f"  [{name}] {path}")
+
+    existing = [(n, p) for n, p in targets if p.exists()]
+    if not existing:
+        return
+
+    if IS_WIN:
+        # Windows: use PowerShell Get-Content -Tail -Wait
+        for name, path in existing:
+            print(f"\n{'='*20} {name} {'='*20}")
+            cmd = ["powershell", "-Command",
+                   f"Get-Content '{path}' -Tail {lines}" + (" -Wait" if follow else "")]
+            subprocess.run(cmd)
+    else:
+        args = ["tail", f"-n{lines}"]
+        if follow:
+            args.append("-f")
+        args += [str(p) for _, p in existing]
+        if len(existing) > 1:
+            # Show headers between files
+            args = ["tail", f"-n{lines}"] + (["-f"] if follow else []) + [str(p) for _, p in existing]
+        try:
+            subprocess.run(args)
+        except KeyboardInterrupt:
+            pass
 
 
 def _get_synapse_install_dir() -> Path | None:
@@ -1110,8 +1160,9 @@ def main():
     parser = argparse.ArgumentParser(prog="synapse", description="Manage Synapse server (backend + frontend)")
     sub = parser.add_subparsers(dest="cmd")
 
-    p_start = sub.add_parser("start", help="Start backend and frontend")
-    p_start.add_argument("--detach", "-d", action="store_true", help="Run processes in background and write pidfiles")
+    p_start = sub.add_parser("start", help="Start backend and frontend (runs in background by default)")
+    p_start.add_argument("--foreground", "-f", action="store_true", help="Run in foreground and stream logs (default: background daemon)")
+    p_start.add_argument("--detach", "-d", action="store_true", help=argparse.SUPPRESS)  # kept for backwards compat
     p_start.add_argument("--no-browser", action="store_true", help="Do not open a browser on start")
     p_start.add_argument(
         "--backend-port", type=int, default=None, metavar="PORT",
@@ -1126,8 +1177,15 @@ def main():
     sub.add_parser("stop", help="Stop running backend and frontend (reads pidfiles)")
     sub.add_parser("status", help="Show status of backend and frontend")
 
-    p_restart = sub.add_parser("restart", help="Restart backend and frontend")
-    p_restart.add_argument("--detach", "-d", action="store_true", help="After restart, leave processes detached")
+    p_logs = sub.add_parser("logs", help="Show or follow backend/frontend log output")
+    p_logs.add_argument("service", nargs="?", default="all", choices=["all", "backend", "frontend"],
+                        help="Which log to show (default: all)")
+    p_logs.add_argument("--follow", "-f", action="store_true", help="Stream log output continuously (like tail -f)")
+    p_logs.add_argument("--lines", "-n", type=int, default=50, metavar="N", help="Number of recent lines to show (default: 50)")
+
+    p_restart = sub.add_parser("restart", help="Restart backend and frontend (runs in background by default)")
+    p_restart.add_argument("--foreground", "-f", action="store_true", help="Run in foreground after restart")
+    p_restart.add_argument("--detach", "-d", action="store_true", help=argparse.SUPPRESS)  # kept for backwards compat
     p_restart.add_argument(
         "--backend-port", type=int, default=None, metavar="PORT",
         help=f"Port for the backend API server (overrides SYNAPSE_BACKEND_PORT env var, default: {DEFAULT_BACKEND_PORT})",
@@ -1165,8 +1223,10 @@ def main():
 
     if args.cmd == "start" or args.cmd is None:
         # default to start when invoked without subcommand to preserve previous behaviour
+        _foreground = getattr(args, "foreground", False)
+        _legacy_detach = getattr(args, "detach", False)
         _start_command(
-            detach=getattr(args, "detach", False),
+            detach=not _foreground or _legacy_detach,
             no_browser=getattr(args, "no_browser", False),
             backend_port=getattr(args, "backend_port", None),
             frontend_port=getattr(args, "frontend_port", None),
@@ -1174,6 +1234,12 @@ def main():
         )
     elif args.cmd == "stop":
         _stop_command()
+    elif args.cmd == "logs":
+        _logs_command(
+            service=getattr(args, "service", "all"),
+            lines=getattr(args, "lines", 50),
+            follow=getattr(args, "follow", False),
+        )
     elif args.cmd == "setup":
         try:
             from synapse import setup_wizard
@@ -1184,8 +1250,10 @@ def main():
         _status_command()
     elif args.cmd == "restart":
         _stop_command()
+        _restart_foreground = getattr(args, "foreground", False)
+        _restart_legacy_detach = getattr(args, "detach", False)
         _start_command(
-            detach=getattr(args, "detach", False),
+            detach=not _restart_foreground or _restart_legacy_detach,
             backend_port=getattr(args, "backend_port", None),
             frontend_port=getattr(args, "frontend_port", None),
         )
