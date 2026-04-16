@@ -1662,14 +1662,24 @@ def ask_ports(cfg):
 # ---------------------------------------------------------------------------
 # Start servers
 # ---------------------------------------------------------------------------
-def start_backend(backend_port: int = DEFAULT_BACKEND_PORT):
+def start_backend(backend_port: int = DEFAULT_BACKEND_PORT, detach: bool = True):
     step("Starting Backend Server")
     env = os.environ.copy()
     env["SYNAPSE_BACKEND_PORT"] = str(backend_port)
     # Always pass SYNAPSE_DATA_DIR as an absolute path so the backend subprocess
     # resolves it correctly regardless of its working directory.
     env["SYNAPSE_DATA_DIR"] = os.path.abspath(DATA_DIR)
-    return subprocess.Popen([PYTHON_EXE, "main.py"], cwd=BACKEND_DIR, env=env)
+    kwargs = {}
+    if detach:
+        if os.name == "posix":
+            kwargs["preexec_fn"] = os.setsid
+        else:
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        log_path = os.path.join(DATA_DIR, "backend.log")
+        log_fh = open(log_path, "a")
+        kwargs["stdout"] = log_fh
+        kwargs["stderr"] = log_fh
+    return subprocess.Popen([PYTHON_EXE, "main.py"], cwd=BACKEND_DIR, env=env, **kwargs)
 
 def _find_npm_cmd_win():
     """Return the full path to npm.cmd on Windows."""
@@ -1683,23 +1693,24 @@ def _find_npm_cmd_win():
     return shutil.which("npm.cmd") or shutil.which("npm") or "npm"
 
 
-def start_frontend(frontend_port: int = DEFAULT_FRONTEND_PORT, backend_port: int = DEFAULT_BACKEND_PORT):
+def start_frontend(frontend_port: int = DEFAULT_FRONTEND_PORT, backend_port: int = DEFAULT_BACKEND_PORT, detach: bool = True):
     step("Starting Frontend Server")
     env = os.environ.copy()
     env["SYNAPSE_FRONTEND_PORT"] = str(frontend_port)
+    env["SYNAPSE_BACKEND_PORT"] = str(backend_port)
     env["BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
-    if IS_WIN:
-        npm = _find_npm_cmd_win()
-        return subprocess.Popen(
-            [npm, "start"],
-            cwd=FRONTEND_DIR,
-            env=env,
-        )
-    return subprocess.Popen(
-        ["npm", "start"],
-        cwd=FRONTEND_DIR,
-        env=env,
-    )
+    kwargs = {}
+    if detach:
+        if os.name == "posix":
+            kwargs["preexec_fn"] = os.setsid
+        else:
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        log_path = os.path.join(DATA_DIR, "frontend.log")
+        log_fh = open(log_path, "a")
+        kwargs["stdout"] = log_fh
+        kwargs["stderr"] = log_fh
+    npm = _find_npm_cmd_win() if IS_WIN else "npm"
+    return subprocess.Popen([npm, "start"], cwd=FRONTEND_DIR, env=env, **kwargs)
 
 def wait_for_server(url: str, name: str, timeout: int = 120) -> bool:
     """Wait for a server to be ready by polling HTTP, with a live elapsed counter."""
@@ -2465,65 +2476,50 @@ def main():
     _backend_port = cfg.get("backend_port", DEFAULT_BACKEND_PORT)
     _frontend_port = cfg.get("frontend_port", DEFAULT_FRONTEND_PORT)
 
-    backend_proc = start_backend(backend_port=_backend_port)
+    backend_proc = start_backend(backend_port=_backend_port, detach=True)
 
     if not wait_for_server(f"http://127.0.0.1:{_backend_port}/docs", "Backend", timeout=300):
-        err("Backend did not start in time. Check the output above for errors.")
+        err("Backend did not start in time. Check logs: synapse logs backend")
         backend_proc.terminate()
         sys.exit(1)
     ok("Backend is ready.")
 
-    frontend_proc = start_frontend(frontend_port=_frontend_port, backend_port=_backend_port)
+    # Write backend PID so 'synapse stop' can find it
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(os.path.join(DATA_DIR, "backend.pid"), "w") as _f:
+        _f.write(str(backend_proc.pid))
+
+    frontend_proc = start_frontend(frontend_port=_frontend_port, backend_port=_backend_port, detach=True)
 
     if not wait_for_server(f"http://127.0.0.1:{_frontend_port}", "Frontend", timeout=120):
-        err("Frontend did not start in time. Check the output above for errors.")
+        err("Frontend did not start in time. Check logs: synapse logs frontend")
         backend_proc.terminate()
         frontend_proc.terminate()
         sys.exit(1)
     ok("Frontend is ready.")
 
+    # Write frontend PID so 'synapse stop' can find it
+    with open(os.path.join(DATA_DIR, "frontend.pid"), "w") as _f:
+        _f.write(str(frontend_proc.pid))
+
     print(f"\n{C.BOLD}{C.GREEN}Application is running!{C.RESET}")
     print(f"   Frontend: {_c(C.CYAN, f'http://localhost:{_frontend_port}')}")
     print(f"   Backend:  {_c(C.CYAN, f'http://localhost:{_backend_port}')}")
-    print(f"\n{C.YELLOW}Press Ctrl+C to stop.{C.RESET}\n")
+    print()
+    print(f"   Synapse is running in the background.")
+    print(f"   {_c(C.CYAN, 'synapse stop')}     -- stop services")
+    print(f"   {_c(C.CYAN, 'synapse logs -f')}  -- stream live logs")
+    print(f"   {_c(C.CYAN, 'synapse status')}   -- check if running")
+    print()
 
+    # Open browser
     try:
-        while True:
-            time.sleep(1)
-            if backend_proc.poll() is not None:
-                err("Backend crashed! Check the logs above.")
-                break
-            if frontend_proc.poll() is not None:
-                err("Frontend crashed! Check the logs above.")
-                break
-    except KeyboardInterrupt:
-        print("\nStopping servers...")
-        if IS_WIN:
-            # terminate() only kills the outermost .cmd wrapper on Windows;
-            # taskkill /F /T kills the entire process tree (npm -> node -> next)
-            for proc in (frontend_proc, backend_proc):
-                try:
-                    subprocess.run(
-                        ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                        capture_output=True,
-                    )
-                except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-        else:
-            # Kill the whole process group so npm -> node children all exit
-            for proc in (backend_proc, frontend_proc):
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                except Exception:
-                    try:
-                        proc.terminate()
-                    except Exception:
-                        pass
-        print("Goodbye!")
-        sys.exit(0)
+        import webbrowser
+        webbrowser.open(f"http://localhost:{_frontend_port}")
+    except Exception:
+        pass
+
+    sys.exit(0)
 
 
 
