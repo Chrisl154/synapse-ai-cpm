@@ -105,6 +105,13 @@ async def update_settings(settings: Settings):
 
     save_settings(data)
 
+    # Propagate URL changes to the live environment so llm_providers picks them
+    # up immediately without requiring a server restart.
+    if data.get("ollama_base_url"):
+        os.environ["OLLAMA_BASE_URL"] = data["ollama_base_url"]
+    if data.get("lmstudio_base_url"):
+        os.environ["LMSTUDIO_BASE_URL"] = data["lmstudio_base_url"]
+
     # Reinitialize memory so embeddings provider matches the new mode.
     import core.server as _server
     try:

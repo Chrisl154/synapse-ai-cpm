@@ -188,8 +188,9 @@ async def get_models():
     # --- Fetch models from each provider concurrently ---
     async def fetch_ollama() -> tuple[bool, list[str], list[str]]:
         try:
+            ollama_url = settings.get("ollama_base_url") or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
             async with httpx.AsyncClient() as client:
-                r = await client.get(f"{os.getenv('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')}/api/tags", timeout=3.0)
+                r = await client.get(f"{ollama_url}/api/tags", timeout=3.0)
                 if r.status_code == 200:
                     models = [m["name"] for m in r.json().get("models", [])]
                     embeds = [m for m in models if "embed" in m.lower()]
@@ -200,8 +201,9 @@ async def get_models():
 
     async def fetch_lmstudio() -> tuple[bool, list[str], list[str]]:
         try:
+            lmstudio_url = settings.get("lmstudio_base_url") or os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234")
             async with httpx.AsyncClient() as client:
-                r = await client.get(f"{os.getenv('LMSTUDIO_BASE_URL', 'http://localhost:1234')}/v1/models", timeout=3.0)
+                r = await client.get(f"{lmstudio_url}/v1/models", timeout=3.0)
                 if r.status_code == 200:
                     data = r.json().get("data", [])
                     models = [f"lmstudio.{m['id']}" for m in data]
