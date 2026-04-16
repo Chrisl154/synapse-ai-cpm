@@ -784,10 +784,19 @@ def ask_embed_code(cfg):
     psql_found = shutil.which("psql") is not None
     if not psql_found:
         warn("PostgreSQL (psql) not found on your system.")
-        info("Code repository indexing will be disabled.")
-        info("You can enable it later in Settings → General after installing PostgreSQL.")
-        cfg["embed_code"] = False
-        return
+        info("PostgreSQL is required for code repository indexing (semantic search).")
+        if ask_yn("Install PostgreSQL now?", default="y"):
+            install_postgresql()
+            psql_found = shutil.which("psql") is not None
+            if not psql_found:
+                warn("PostgreSQL still not detected on PATH. Skipping code indexing setup.")
+                info("You can re-run 'synapse setup' after PostgreSQL is installed.")
+                cfg["embed_code"] = False
+                return
+        else:
+            info("Skipping PostgreSQL. Code indexing can be enabled later via 'synapse setup'.")
+            cfg["embed_code"] = False
+            return
 
     ok("PostgreSQL found.")
     enabled = ask_yn("Do you want to enable code repository indexing?", default="n")

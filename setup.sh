@@ -198,13 +198,13 @@ check_postgres() {
     echo "  search feature (Settings → General → Index Code Repositories)."
     echo "  You can skip this and enable it later by re-running the setup script."
     echo ""
-    read -r -p "  Install PostgreSQL now? [y/N] " _pg_answer
+    read -r -p "  Install PostgreSQL now? [Y/n] " _pg_answer
     case "$_pg_answer" in
-        [Yy]*)
-            install_postgres
+        [Nn]*)
+            echo "  Skipping PostgreSQL. Code indexing will be unavailable until it is installed."
             ;;
         *)
-            echo "  Skipping PostgreSQL. Code indexing will be unavailable until it is installed."
+            install_postgres
             ;;
     esac
 }
@@ -454,7 +454,12 @@ main() {
 
     # Add bin dir to profile if missing
     BIN_DIR="$INSTALL_DIR/bin"
-    for profile in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile"; do
+    # On macOS (default zsh since Catalina), create ~/.zshrc if it doesn't exist
+    if [[ "$OS" == "macos" ]] && [ ! -f "$HOME/.zshrc" ]; then
+        touch "$HOME/.zshrc"
+        echo -e "\033[92m[OK] Created ~/.zshrc\033[0m"
+    fi
+    for profile in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
         if [ -f "$profile" ]; then
             if ! grep -q "$BIN_DIR" "$profile"; then
                 echo "" >> "$profile"
@@ -475,13 +480,29 @@ main() {
     echo ""
     echo -e "   To start Synapse:"
     echo -e "     \033[96msynapse start\033[0m"
+    echo ""
+    echo -e "   Other commands:"
+    echo -e "     synapse stop    -- stop services"
+    echo -e "     synapse status  -- check status"
+    echo -e "     synapse restart -- restart services"
     echo "========================================================"
 
-    # Auto-activate PATH in this terminal without requiring the user to source ~/.bashrc
-    if [ "$_SOURCED" = false ] && [ -t 1 ] && [ -f "$HOME/.bashrc" ]; then
+    # Activate PATH in the current terminal session
+    _CURRENT_SHELL="$(basename "${SHELL:-bash}")"
+    if [ "$_SOURCED" = false ] && [ -t 1 ]; then
         echo ""
         echo -e "\033[96m==> Activating 'synapse' command in this terminal...\033[0m"
-        exec bash --rcfile "$HOME/.bashrc" -i
+        if [[ "$_CURRENT_SHELL" == "zsh" ]] && [ -f "$HOME/.zshrc" ]; then
+            exec zsh -l
+        elif [ -f "$HOME/.bashrc" ]; then
+            exec bash --rcfile "$HOME/.bashrc" -i
+        else
+            echo -e "\033[93m  Open a new terminal or run: export PATH=\"$BIN_DIR:\$PATH\"\033[0m"
+        fi
+    else
+        echo ""
+        echo -e "\033[93m  NOTE: Open a new terminal (or run: source ~/.bashrc / source ~/.zshrc)"
+        echo -e "  to make the 'synapse' command available.\033[0m"
     fi
 }
 
