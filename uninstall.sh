@@ -4,8 +4,6 @@
 # Usage: curl -sSL https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/uninstall.sh | bash
 #    or: bash uninstall.sh [--keep-data]
 
-set -e
-
 # ---------------------------------------------------------------------------
 # Detect OS
 # ---------------------------------------------------------------------------
@@ -14,8 +12,6 @@ detect_os() {
         OS="linux"
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         OS="macos"
-    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
-        OS="windows"
     else
         OS="unknown"
     fi
@@ -42,134 +38,147 @@ echo "========================================================"
 echo ""
 
 # ---------------------------------------------------------------------------
-# If the synapse CLI is available, delegate to it (handles everything)
+# Confirm — always read from /dev/tty so this works inside curl | bash
 # ---------------------------------------------------------------------------
-SYNAPSE_BIN=""
-if command -v synapse &>/dev/null; then
-    SYNAPSE_BIN=$(command -v synapse)
-elif [ -x "$INSTALL_DIR/bin/synapse" ]; then
-    SYNAPSE_BIN="$INSTALL_DIR/bin/synapse"
+echo "This will PERMANENTLY remove Synapse AI and all its files."
+if $KEEP_DATA; then
+    echo "(Your data in ~/.synapse will be preserved.)"
 fi
-
-if [ -n "$SYNAPSE_BIN" ]; then
-    echo "Found Synapse CLI at: $SYNAPSE_BIN"
-    echo "Delegating to: synapse uninstall"
-    echo ""
-    if $KEEP_DATA; then
-        "$SYNAPSE_BIN" uninstall --keep-data
-    else
-        "$SYNAPSE_BIN" uninstall
-    fi
-    exit $?
-fi
-
-# ---------------------------------------------------------------------------
-# Manual uninstall fallback (when synapse CLI is not available)
-# ---------------------------------------------------------------------------
-echo "The 'synapse' command was not found. Performing manual uninstall..."
+echo ""
+read -r -p "Type 'yes' to confirm: " _answer < /dev/tty
 echo ""
 
-# Confirm
-read -r -p "This will PERMANENTLY remove Synapse AI. Type 'yes' to confirm: " _answer
 if [[ "$_answer" != "yes" ]]; then
     echo "Aborted."
     exit 0
 fi
 
-echo ""
-
-# Stop running services via PID files
-RUN_DIR="$INSTALL_DIR/run"
-DATA_PID_DIR="$HOME/.synapse"
-for pidFile in "$RUN_DIR/backend.pid" "$RUN_DIR/frontend.pid" \
-               "$DATA_PID_DIR/backend.pid" "$DATA_PID_DIR/frontend.pid"; do
-    if [ -f "$pidFile" ]; then
-        pid=$(cat "$pidFile" 2>/dev/null)
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null && echo "  Stopped process $pid ($(basename $pidFile))" || true
+# ---------------------------------------------------------------------------
+# 1. Stop running services via PID files
+# ---------------------------------------------------------------------------
+echo "Stopping services..."
+_DATA_DIRS=("$HOME/.synapse" "$HOME/.synapse/data" "$INSTALL_DIR/run")
+for _dir in "${_DATA_DIRS[@]}"; do
+    for _pid_file in "$_dir/backend.pid" "$_dir/frontend.pid"; do
+        if [ -f "$_pid_file" ]; then
+            _pid=$(cat "$_pid_file" 2>/dev/null)
+            if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
+                kill "$_pid" 2>/dev/null && echo "  Stopped PID $_pid ($(basename "$_pid_file"))" || true
+            fi
+            rm -f "$_pid_file"
         fi
-        rm -f "$pidFile"
-    fi
+    done
 done
 
-# Also try by port (best effort)
-for port in 8765 3000; do
+# Best-effort kill by port
+for _port in 8765 3000; do
     if command -v lsof &>/dev/null; then
-        pid=$(lsof -ti :"$port" 2>/dev/null || true)
-        if [ -n "$pid" ]; then
-            kill "$pid" 2>/dev/null && echo "  Stopped process on port $port" || true
+        _pid=$(lsof -ti :"$_port" 2>/dev/null || true)
+        if [ -n "$_pid" ]; then
+            kill "$_pid" 2>/dev/null && echo "  Stopped process on port $_port" || true
         fi
     fi
 done
 
-# Remove macOS LaunchAgent
+# ---------------------------------------------------------------------------
+# 2. Remove startup entries
+# ---------------------------------------------------------------------------
 if [[ "$OS" == "macos" ]]; then
-    plist="$HOME/Library/LaunchAgents/com.synapse-ai.server.plist"
-    if [ -f "$plist" ]; then
-        launchctl unload "$plist" 2>/dev/null || true
-        rm -f "$plist"
+    _plist="$HOME/Library/LaunchAgents/com.synapse-ai.server.plist"
+    if [ -f "$_plist" ]; then
+        launchctl unload "$_plist" 2>/dev/null || true
+        rm -f "$_plist"
         echo "  Removed macOS LaunchAgent."
     fi
-fi
-
-# Remove Linux systemd user service
-if [[ "$OS" == "linux" ]]; then
-    service_file="$HOME/.config/systemd/user/synapse-ai.service"
-    if [ -f "$service_file" ]; then
+elif [[ "$OS" == "linux" ]]; then
+    _service="$HOME/.config/systemd/user/synapse-ai.service"
+    if [ -f "$_service" ]; then
         systemctl --user disable synapse-ai.service 2>/dev/null || true
-        rm -f "$service_file"
+        rm -f "$_service"
         systemctl --user daemon-reload 2>/dev/null || true
         echo "  Removed systemd user service."
     fi
 fi
 
-# Remove data directory (unless --keep-data)
+# ---------------------------------------------------------------------------
+# 3. Remove data directory (unless --keep-data)
+# ---------------------------------------------------------------------------
 if ! $KEEP_DATA; then
-    for data_dir in "$HOME/.synapse" "$HOME/.local/share/SynapseAI/data" \
-                    "$HOME/Library/Application Support/SynapseAI/data"; do
-        if [ -d "$data_dir" ]; then
-            echo "  Removing data: $data_dir"
-            rm -rf "$data_dir"
+    for _data in "$HOME/.synapse" "$HOME/.local/share/SynapseAI/data" \
+                 "$HOME/Library/Application Support/SynapseAI/data"; do
+        if [ -d "$_data" ]; then
+            echo "  Removing data: $_data"
+            rm -rf "$_data"
         fi
     done
 fi
 
-# Remove installation directory
+# ---------------------------------------------------------------------------
+# 4. Remove installation directory
+# ---------------------------------------------------------------------------
 if [ -d "$INSTALL_DIR" ]; then
     echo ""
     echo "Removing installation directory: $INSTALL_DIR"
-    # Remove large subdirs first
     rm -rf "$INSTALL_DIR/backend/venv" 2>/dev/null || true
     rm -rf "$INSTALL_DIR/frontend/node_modules" 2>/dev/null || true
     rm -rf "$INSTALL_DIR"
-    echo "  Removed."
+    echo "  Done."
 else
+    echo ""
     echo "Installation directory not found: $INSTALL_DIR"
-    echo "  (May already be removed or was installed elsewhere.)"
+    echo "  (May already be removed or installed to a custom path.)"
 fi
 
-# Clean PATH entries from shell rc files
-BIN_DIR="$INSTALL_DIR/bin"
+# ---------------------------------------------------------------------------
+# 5. Remove pip package (if pip is available)
+# ---------------------------------------------------------------------------
+echo ""
+echo "Removing Python package..."
+_pip_cmd=""
+for _cmd in pip3 pip python3 python; do
+    if command -v "$_cmd" &>/dev/null; then
+        _pip_cmd="$_cmd"
+        break
+    fi
+done
+
+if [ -n "$_pip_cmd" ]; then
+    if [[ "$_pip_cmd" == "python"* ]]; then
+        "$_pip_cmd" -m pip uninstall -y synapse-ai 2>/dev/null \
+            && echo "  Removed pip package synapse-ai." \
+            || "$_pip_cmd" -m pip uninstall -y synapse 2>/dev/null \
+            && echo "  Removed pip package synapse." \
+            || echo "  Package not found in pip (may already be removed)."
+    else
+        "$_pip_cmd" uninstall -y synapse-ai 2>/dev/null \
+            && echo "  Removed pip package synapse-ai." \
+            || "$_pip_cmd" uninstall -y synapse 2>/dev/null \
+            && echo "  Removed pip package synapse." \
+            || echo "  Package not found in pip (may already be removed)."
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Clean PATH from shell rc files
+# ---------------------------------------------------------------------------
 echo ""
 echo "Cleaning shell profile files..."
-for rc_file in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
-    if [ -f "$rc_file" ]; then
-        if grep -qE "SynapseAI|Synapse AI|synapse-ai" "$rc_file" 2>/dev/null; then
-            grep -vE "SynapseAI|Synapse AI|synapse-ai" "$rc_file" > "$rc_file.synapse_bak" \
-                && mv "$rc_file.synapse_bak" "$rc_file" \
-                && echo "  Cleaned PATH from $rc_file" \
-                || rm -f "$rc_file.synapse_bak"
-        fi
+for _rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+    if [ -f "$_rc" ] && grep -qE "SynapseAI|Synapse AI" "$_rc" 2>/dev/null; then
+        grep -vE "SynapseAI|Synapse AI" "$_rc" > "$_rc.synapse_bak" \
+            && mv "$_rc.synapse_bak" "$_rc" \
+            && echo "  Cleaned: $_rc" \
+            || rm -f "$_rc.synapse_bak"
     fi
 done
 
 echo ""
 echo "========================================================"
-echo -e "\033[92m   Synapse AI has been uninstalled.\033[0m"
+echo "  Synapse AI has been uninstalled."
 if $KEEP_DATA; then
-    echo "   Your data directory was preserved."
+    echo "  Your data directory was preserved."
 fi
 echo ""
-echo "   Open a new terminal to apply PATH changes."
+echo "  Open a new terminal to apply PATH changes."
 echo "========================================================"
 echo ""
