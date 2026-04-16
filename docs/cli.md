@@ -13,6 +13,20 @@ Warnings are printed at startup if versions are below the minimums. Missing `oll
 
 ## Installation
 
+The recommended way to install is via the setup script, which handles all prerequisites (Python, Node.js, PostgreSQL, etc.):
+
+```bash
+# macOS / Linux
+curl -sSL https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/setup.sh | bash
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/setup.ps1 | iex
+```
+
+> **After install:** Open a new terminal (or run `source ~/.bashrc` / `source ~/.zshrc`) so the `synapse` command is available in your PATH.
+
+For development or manual installs:
+
 ```bash
 # editable install (recommended for development)
 python -m pip install -e .
@@ -28,6 +42,10 @@ python setup.py
 # or after install:
 synapse setup
 ```
+
+### PostgreSQL (Code Indexing)
+
+PostgreSQL is required for the **Code Repository Indexing** feature (semantic search across your codebases). The setup script will prompt you to install it automatically. You can also install it manually and then re-run `synapse setup` to configure it.
 
 ## Environment variables
 
@@ -144,6 +162,12 @@ synapse upgrade
 ### `uninstall`
 
 Permanently removes Synapse AI. Prompts for confirmation before proceeding.
+
+You can also uninstall via curl (useful if the `synapse` command is not available):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/uninstall.sh | bash
+```
 
 Steps performed:
 1. Stops running services

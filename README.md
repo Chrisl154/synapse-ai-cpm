@@ -20,7 +20,7 @@
 ## Install
 
 ### Quick Setup Script (recommended)
-The easiest way to get started is to run the automated setup script. This will clone the repository, install all necessary dependencies, verify your environment, and start both the backend and frontend servers.
+The easiest way to get started is to run the automated setup script. This will clone the repository, install all necessary dependencies (including PostgreSQL if needed), verify your environment, and walk you through the configuration wizard.
 
 **macOS / Linux:**
 ```bash
@@ -32,6 +32,21 @@ curl -sSL https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/setu
 irm https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/setup.ps1 | iex
 ```
 
+> **After install:** Open a new terminal (or run `source ~/.bashrc` / `source ~/.zshrc`) to make the `synapse` command available in your session.
+
+### Uninstall
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/uninstall.sh | bash
+```
+
+Or if the `synapse` CLI is already available:
+
+```bash
+synapse uninstall            # remove everything
+synapse uninstall --keep-data  # remove Synapse but keep your data
+```
+
 ---
 
 ## CLI
@@ -39,11 +54,17 @@ irm https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/setup.ps1 
 Once installed, use the `synapse` command to manage the server:
 
 ```bash
-synapse start     # start backend + frontend, open browser
-synapse stop      # stop background processes
-synapse upgrade   # upgrade to the latest version
-synapse uninstall # remove Synapse and clean up installed files
+synapse start              # start backend + frontend, open browser
+synapse start --detach     # start in background (writes pidfiles)
+synapse stop               # stop background processes
+synapse status             # show whether services are running
+synapse restart            # restart services
+synapse setup              # re-run the configuration wizard
+synapse upgrade            # pull latest code and rebuild
+synapse uninstall          # remove Synapse and clean up all files
 ```
+
+See [docs/cli.md](docs/cli.md) for the full command reference including flags.
 
 ---
 
