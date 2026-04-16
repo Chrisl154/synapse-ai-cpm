@@ -1757,24 +1757,31 @@ def add_to_bashrc():
     return True
 
 def add_to_zshrc():
-    """Add bin directory to PATH in ~/.zshrc"""
+    """Add bin directory to PATH in ~/.zshrc, creating it if needed on zsh systems."""
     zshrc = os.path.expanduser("~/.zshrc")
-    if not os.path.exists(zshrc):
-        return False
-    
     bin_dir = os.path.join(ROOT_DIR, "bin")
     export_line = f"\nexport PATH=\"{bin_dir}:$PATH\"  # Synapse AI"
-    
+
+    is_zsh_system = sys.platform == "darwin" or os.environ.get("SHELL", "").endswith("zsh")
+
+    if not os.path.exists(zshrc):
+        if not is_zsh_system:
+            return False
+        with open(zshrc, "w") as f:
+            f.write(export_line + "\n")
+        ok("Created ~/.zshrc with Synapse PATH")
+        return True
+
     with open(zshrc, "r") as f:
         content = f.read()
-    
+
     if bin_dir in content:
         ok("Synapse already in PATH (zshrc)")
         return True
-    
+
     with open(zshrc, "a") as f:
         f.write(export_line + "\n")
-    ok(f"Added Synapse to PATH (zshrc)")
+    ok("Added Synapse to PATH (zshrc)")
     return True
 
 def _add_to_windows_path(bin_dir):
@@ -1826,10 +1833,18 @@ def setup_path():
 
         # Update PATH in the current process so synapse is immediately usable
         os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
-        info("")
-        info("To use 'synapse' in your CURRENT terminal, run:")
-        info(f"  export PATH=\"{bin_dir}:$PATH\"")
-        info("(Already saved to ~/.bashrc / ~/.zshrc for future sessions.)")
+        print()
+        print("=" * 55)
+        print("  ACTION REQUIRED — activate the 'synapse' command:")
+        print()
+        print("  Open a NEW terminal,  OR  run this in your current one:")
+        current_shell = os.path.basename(os.environ.get("SHELL", "bash"))
+        if current_shell == "zsh":
+            print("    source ~/.zshrc")
+        else:
+            print("    source ~/.bashrc")
+        print("=" * 55)
+        print()
         ok("PATH setup complete.")
 
 def show_restart_instructions():
