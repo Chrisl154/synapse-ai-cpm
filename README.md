@@ -54,15 +54,21 @@ synapse uninstall --keep-data  # remove Synapse but keep your data
 Once installed, use the `synapse` command to manage the server:
 
 ```bash
-synapse start              # start backend + frontend, open browser
-synapse start --detach     # start in background (writes pidfiles)
+synapse start              # start in background (daemon), opens browser
+synapse start --foreground # start and stream logs in this terminal
 synapse stop               # stop background processes
 synapse status             # show whether services are running
-synapse restart            # restart services
+synapse restart            # restart services (background by default)
+synapse logs               # view recent log output from both services
+synapse logs --follow      # stream logs live (Ctrl+C to stop)
+synapse logs backend       # backend logs only
+synapse logs frontend      # frontend logs only
 synapse setup              # re-run the configuration wizard
 synapse upgrade            # pull latest code and rebuild
 synapse uninstall          # remove Synapse and clean up all files
 ```
+
+> **Tip:** `synapse start` runs as a background daemon by default — your terminal stays free. Use `synapse logs -f` to watch output, and `synapse stop` to shut it down.
 
 See [docs/cli.md](docs/cli.md) for the full command reference including flags.
 

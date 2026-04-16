@@ -61,13 +61,13 @@ Values in a `.env` file at the project root are loaded automatically (variables 
 ## Commands
 
 ```bash
-# start in foreground (opens browser)
+# start as background daemon (default) — terminal stays free, browser opens
 synapse start
 
-# start in background (writes pidfiles)
-synapse start --detach
+# start in foreground and stream logs to the terminal
+synapse start --foreground
 
-# start but don't open browser
+# start but don't open the browser
 synapse start --no-browser
 
 # start on custom ports
@@ -82,11 +82,24 @@ synapse stop
 # show status
 synapse status
 
-# restart
+# view recent log output (last 50 lines from both services)
+synapse logs
+
+# stream logs live — Ctrl+C to exit
+synapse logs --follow
+
+# show only backend or frontend logs
+synapse logs backend
+synapse logs frontend
+
+# show the last 200 lines and follow
+synapse logs -n 200 --follow
+
+# restart (background daemon by default)
 synapse restart
 
-# restart detached on custom ports
-synapse restart --detach --backend-port 8080 --frontend-port 4000
+# restart in foreground on custom ports
+synapse restart --foreground --backend-port 8080 --frontend-port 4000
 
 # run interactive setup wizard (configure API keys and settings)
 synapse setup
@@ -111,13 +124,13 @@ python -m synapse start
 
 ### `start`
 
-Starts the backend and frontend. Waits for both to be ready, then opens the browser (unless `--no-browser` or `--detach`).
+Starts the backend and frontend as a **background daemon** by default. Waits for both to be ready, opens the browser, then returns control to the terminal. PIDs are written to the data directory so `synapse stop` can find them later. Logs are written to `~/.synapse/data/backend.log` and `frontend.log`.
 
-In foreground mode, `Ctrl+C` shuts down both processes cleanly. In detach mode, PIDs are written to the data directory and the process returns immediately.
+Use `--foreground` to stream logs directly in the terminal instead (useful for debugging). `Ctrl+C` in foreground mode shuts down both processes cleanly.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--detach`, `-d` | off | Run in background and write pidfiles |
+| `--foreground`, `-f` | off | Run in foreground and stream logs to the terminal |
 | `--no-browser` | off | Do not open a browser on start |
 | `--backend-port PORT` | `8765` | Port for the backend API server (overrides `SYNAPSE_BACKEND_PORT`) |
 | `--frontend-port PORT` | `3000` | Port for the frontend web UI (overrides `SYNAPSE_FRONTEND_PORT`) |
@@ -131,13 +144,27 @@ Reads PID files and terminates both processes. Sends `SIGTERM` first, then `SIGK
 
 Prints whether the backend and frontend processes are running or have a stale PID.
 
-### `restart`
+### `logs`
 
-Equivalent to `stop` followed by `start`. Accepts the same port and detach flags as `start` (but not `--no-browser` or `--profile`).
+Shows recent log output from the backend and/or frontend. Logs are only written when Synapse is running in daemon mode (the default).
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--detach`, `-d` | off | Leave processes detached after restart |
+| `service` | `all` | Which logs to show: `all`, `backend`, or `frontend` |
+| `--follow`, `-f` | off | Stream output continuously (like `tail -f`). Ctrl+C to exit. |
+| `--lines N`, `-n N` | `50` | Number of recent lines to show |
+
+**Log file locations:**
+- Backend: `~/.synapse/data/backend.log`
+- Frontend: `~/.synapse/data/frontend.log`
+
+### `restart`
+
+Equivalent to `stop` followed by `start`. Runs as a background daemon by default.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--foreground`, `-f` | off | Run in foreground after restart |
 | `--backend-port PORT` | `8765` | Port for the backend API server |
 | `--frontend-port PORT` | `3000` | Port for the frontend web UI |
 
