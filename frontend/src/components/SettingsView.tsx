@@ -67,6 +67,8 @@ export const SettingsView = ({ initialTab = 'general', initialSubTab }: { initia
     const [bedrockInferenceProfiles, setBedrockInferenceProfiles] = useState<Array<{ id: string; arn: string; name: string; status?: string; type?: string }>>([]);
     const [loadingInferenceProfiles, setLoadingInferenceProfiles] = useState(false);
     const [inferenceProfilesError, setInferenceProfilesError] = useState<string | null>(null);
+    const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://127.0.0.1:11434');
+    const [lmstudioBaseUrl, setLmstudioBaseUrl] = useState('http://localhost:1234');
     const [sqlConnectionString, setSqlConnectionString] = useState('');
 
 
@@ -208,6 +210,8 @@ export const SettingsView = ({ initialTab = 'general', initialSubTab }: { initia
             bedrock_api_key: bedrockApiKey,
             bedrock_inference_profile: bedrockInferenceProfile,
             aws_region: awsRegion,
+            ollama_base_url: ollamaBaseUrl,
+            lmstudio_base_url: lmstudioBaseUrl,
             sql_connection_string: sqlConnectionString,
             n8n_url: n8nUrl,
             n8n_api_key: n8nApiKey,
@@ -394,6 +398,8 @@ export const SettingsView = ({ initialTab = 'general', initialSubTab }: { initia
                 setBedrockApiKey(data.bedrock_api_key || '');
                 setAwsRegion(data.aws_region || 'us-east-1');
                 setBedrockInferenceProfile(data.bedrock_inference_profile || '');
+                setOllamaBaseUrl(data.ollama_base_url || 'http://127.0.0.1:11434');
+                setLmstudioBaseUrl(data.lmstudio_base_url || 'http://localhost:1234');
                 setSqlConnectionString(data.sql_connection_string || '');
                 setN8nUrl(data.n8n_url || 'http://localhost:5678');
                 setN8nApiKey(data.n8n_api_key || '');
@@ -958,6 +964,8 @@ export const SettingsView = ({ initialTab = 'general', initialSubTab }: { initia
                             localModels={localModels} cloudModels={cloudModels}
                             filteredModels={filteredModels}
                             loadingModels={loadingModels}
+                            ollamaBaseUrl={ollamaBaseUrl} setOllamaBaseUrl={setOllamaBaseUrl}
+                            lmstudioBaseUrl={lmstudioBaseUrl} setLmstudioBaseUrl={setLmstudioBaseUrl}
                             openaiKey={openaiKey} setOpenaiKey={setOpenaiKey}
                             anthropicKey={anthropicKey} setAnthropicKey={setAnthropicKey}
                             geminiKey={geminiKey} setGeminiKey={setGeminiKey}

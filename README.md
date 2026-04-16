@@ -24,12 +24,12 @@ The easiest way to get started is to run the automated setup script. This will c
 
 **macOS / Linux:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/naveenraj-17/synapse-ai/main/setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/setup.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/naveenraj-17/synapse-ai/main/setup.ps1 | iex
+irm https://raw.githubusercontent.com/Chrisl154/synapse-ai-cpm/master/setup.ps1 | iex
 ```
 
 ---
@@ -372,7 +372,7 @@ Switch providers per-agent or globally in **Settings → Model**.
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=naveenraj-17/synapse-ai&type=date&legend=top-left)](https://www.star-history.com/#naveenraj-17/synapse-ai&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=Chrisl154/synapse-ai-cpm&type=date&legend=top-left)](https://www.star-history.com/#Chrisl154/synapse-ai-cpm&type=date&legend=top-left)
 
 ---
 

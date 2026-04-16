@@ -88,9 +88,12 @@ class LLMError(Exception):
     pass
 
 
-# Configuration — read at call time so OLLAMA_BASE_URL set after import is respected
+# Configuration — read at call time so URLs set after import are respected
 def _ollama_base_url() -> str:
     return os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+
+def _lmstudio_base_url() -> str:
+    return os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234")
 
 OLLAMA_MODEL = "llama3"
 
@@ -107,6 +110,8 @@ def detect_mode_from_model(model_name: str) -> str:
     m = model_name.lower()
     if m.startswith("cli."):
         return "cli"
+    if m.startswith("lmstudio."):
+        return "lmstudio"
     if m.startswith("gpt"):
         return "cloud"
     if m.startswith("claude"):
@@ -150,6 +155,8 @@ def detect_provider_from_model(model_name: str) -> str:
         return "grok"
     if m.startswith("deepseek"):
         return "deepseek"
+    if m.startswith("lmstudio."):
+        return "lmstudio"
     return "ollama"
 
 
@@ -1725,6 +1732,41 @@ async def generate_response(
             return f"CLI Provider Error: {str(e)}"
 
     
+    elif mode == "lmstudio":
+        # LM Studio — OpenAI-compatible local API, no auth required
+        real_model = current_model.removeprefix("lmstudio.")
+        messages = [{"role": "system", "content": augmented_system}]
+        if history_messages:
+            messages.extend(history_messages)
+        messages.append({"role": "user", "content": prompt_msg})
+        payload: dict = {"model": real_model, "messages": messages}
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                resp = await client.post(
+                    f"{_lmstudio_base_url()}/v1/chat/completions",
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                usage = data.get("usage", {})
+                input_tokens = usage.get("prompt_tokens", 0)
+                output_tokens = usage.get("completion_tokens", 0)
+                choice = data["choices"][0]
+                msg = choice.get("message", {})
+                if msg.get("tool_calls"):
+                    tc = msg["tool_calls"][0]
+                    result_text = json.dumps({
+                        "tool": tc["function"]["name"],
+                        "arguments": json.loads(tc["function"].get("arguments", "{}"))
+                    })
+                else:
+                    result_text = msg.get("content", "")
+        except Exception as e:
+            return f"LM Studio Error: {e}"
+
     else:
         # Local Ollama
         async with httpx.AsyncClient() as client:
@@ -1849,6 +1891,8 @@ async def embed_batch(texts: list[str], model: str, settings: dict) -> list[list
         return await _embed_bedrock(texts, model, settings)
     elif provider == "ollama":
         return await _embed_ollama(texts, model)
+    elif provider == "lmstudio":
+        return await _embed_lmstudio(texts, model)
     else:
         print(f"DEBUG: Unknown provider '{provider}' for embedding model '{model}'")
         return [[0.0] * 768 for _ in range(len(texts))]
@@ -1966,6 +2010,21 @@ async def _embed_bedrock(texts: list[str], model: str, settings: dict) -> list[l
             embeddings.append([])
 
     return embeddings
+
+
+async def _embed_lmstudio(texts: list[str], model: str) -> list[list[float]]:
+    real_model = model.removeprefix("lmstudio.")
+    url = f"{_lmstudio_base_url()}/v1/embeddings"
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json={"model": real_model, "input": texts})
+            resp.raise_for_status()
+            data = resp.json()
+            items = sorted(data.get("data", []), key=lambda x: x.get("index", 0))
+            return [item["embedding"] for item in items]
+    except Exception as e:
+        print(f"ERROR: LM Studio embedding failed: {e}")
+        return [[0.0] * 4096 for _ in range(len(texts))]
 
 
 async def _embed_ollama(texts: list[str], model: str) -> list[list[float]]:

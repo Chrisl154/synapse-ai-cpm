@@ -89,6 +89,8 @@ class Settings(BaseModel):
     aws_secret_access_key: str = ""
     aws_session_token: str = ""
     aws_region: str = "us-east-1"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    lmstudio_base_url: str = "http://localhost:1234"
     sql_connection_string: str = ""
     n8n_url: str = "http://localhost:5678"
     n8n_api_key: str = ""

@@ -31,6 +31,8 @@ def load_settings():
         "aws_secret_access_key": "",
         "aws_session_token": "",
         "aws_region": "us-east-1",
+        "ollama_base_url": "http://127.0.0.1:11434",
+        "lmstudio_base_url": "http://localhost:1234",
         "sql_connection_string": "",
         "n8n_url": "http://localhost:5678",
         "n8n_api_key": "",

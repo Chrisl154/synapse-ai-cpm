@@ -192,7 +192,19 @@ async def get_models():
                 r = await client.get(f"{os.getenv('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')}/api/tags", timeout=3.0)
                 if r.status_code == 200:
                     models = [m["name"] for m in r.json().get("models", [])]
-                    # Simple heuristic: models with 'embed' in name are likely for embeddings
+                    embeds = [m for m in models if "embed" in m.lower()]
+                    return True, models, embeds
+        except Exception:
+            pass
+        return False, [], []
+
+    async def fetch_lmstudio() -> tuple[bool, list[str], list[str]]:
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{os.getenv('LMSTUDIO_BASE_URL', 'http://localhost:1234')}/v1/models", timeout=3.0)
+                if r.status_code == 200:
+                    data = r.json().get("data", [])
+                    models = [f"lmstudio.{m['id']}" for m in data]
                     embeds = [m for m in models if "embed" in m.lower()]
                     return True, models, embeds
         except Exception:
@@ -405,6 +417,7 @@ async def get_models():
     # doesn't cancel the others.
     _PROVIDER_FALLBACKS = [
         (False, [], []),                                                                 # ollama
+        (False, [], []),                                                                 # lmstudio
         (True, OPENAI_FALLBACK, ["text-embedding-3-small", "text-embedding-3-large"]),  # openai
         (True, ANTHROPIC_FALLBACK, []),                                                  # anthropic
         (True, GEMINI_FALLBACK, ["text-embedding-004"]),                                 # gemini
@@ -416,10 +429,10 @@ async def get_models():
         (False, [], []),                                                                 # codex_cli
         (False, [], []),                                                                 # github_copilot_cli
     ]
-    _PROVIDER_NAMES = ["ollama", "openai", "anthropic", "gemini", "grok", "deepseek", "bedrock", "anthropic_cli", "gemini_cli", "codex_cli", "github_copilot_cli"]
+    _PROVIDER_NAMES = ["ollama", "lmstudio", "openai", "anthropic", "gemini", "grok", "deepseek", "bedrock", "anthropic_cli", "gemini_cli", "codex_cli", "github_copilot_cli"]
 
     raw = await asyncio.gather(
-        fetch_ollama(), fetch_openai(), fetch_anthropic(),
+        fetch_ollama(), fetch_lmstudio(), fetch_openai(), fetch_anthropic(),
         fetch_gemini(), fetch_grok(), fetch_deepseek(), fetch_bedrock(),
         fetch_claude_cli(), fetch_gemini_cli(), fetch_codex_cli(),
         fetch_github_copilot_cli(),
@@ -435,20 +448,22 @@ async def get_models():
             results.append(r)
 
     ollama_avail, ollama_chat, ollama_embed = results[0]
-    openai_avail, openai_chat, openai_embed = results[1]
-    anthropic_avail, anthropic_chat, anthropic_embed = results[2]
-    gemini_avail, gemini_chat, gemini_embed = results[3]
-    grok_avail, grok_chat, grok_embed = results[4]
-    deepseek_avail, deepseek_chat, deepseek_embed = results[5]
-    bedrock_avail, bedrock_chat, bedrock_embed = results[6]
-    c_claude_avail, c_claude_chat, _ = results[7]
-    c_gemini_avail, c_gemini_chat, _ = results[8]
-    c_codex_avail, c_codex_chat, _ = results[9]
-    c_copilot_avail, c_copilot_chat, _ = results[10]
+    lmstudio_avail, lmstudio_chat, lmstudio_embed = results[1]
+    openai_avail, openai_chat, openai_embed = results[2]
+    anthropic_avail, anthropic_chat, anthropic_embed = results[3]
+    gemini_avail, gemini_chat, gemini_embed = results[4]
+    grok_avail, grok_chat, grok_embed = results[5]
+    deepseek_avail, deepseek_chat, deepseek_embed = results[6]
+    bedrock_avail, bedrock_chat, bedrock_embed = results[7]
+    c_claude_avail, c_claude_chat, _ = results[8]
+    c_gemini_avail, c_gemini_chat, _ = results[9]
+    c_codex_avail, c_codex_chat, _ = results[10]
+    c_copilot_avail, c_copilot_chat, _ = results[11]
 
     # --- Build provider map ---
     providers = {
         "ollama": {"available": ollama_avail, "models": ollama_chat, "embedding_models": ollama_embed},
+        "lmstudio": {"available": lmstudio_avail, "models": lmstudio_chat, "embedding_models": lmstudio_embed},
         "gemini": {"available": gemini_avail, "models": gemini_chat, "embedding_models": gemini_embed},
         "anthropic": {"available": anthropic_avail, "models": anthropic_chat, "embedding_models": anthropic_embed},
         "openai": {"available": openai_avail, "models": openai_chat, "embedding_models": openai_embed},
@@ -469,11 +484,12 @@ async def get_models():
 
     # --- Backward compat ---
     cloud_models = gemini_chat + anthropic_chat + openai_chat + grok_chat + deepseek_chat + BEDROCK_FALLBACK + c_claude_chat + c_gemini_chat + c_codex_chat + c_copilot_chat
+    local_models = ollama_chat + lmstudio_chat
 
     return {
         "providers": providers,
         "all_available": all_available,
-        "local": ollama_chat,
+        "local": local_models,
         "cloud": cloud_models,
     }
 

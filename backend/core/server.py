@@ -70,6 +70,8 @@ _settings = load_settings()
 # Propagate ollama_base_url from settings to env so llm_providers picks it up
 if _settings.get("ollama_base_url"):
     os.environ["OLLAMA_BASE_URL"] = _settings["ollama_base_url"]
+if _settings.get("lmstudio_base_url"):
+    os.environ["LMSTUDIO_BASE_URL"] = _settings["lmstudio_base_url"]
 
 TOOLS_LIST = {
     "time": str(TOOLS_DIR / "time.py"),

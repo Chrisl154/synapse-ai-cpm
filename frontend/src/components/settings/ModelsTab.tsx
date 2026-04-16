@@ -34,6 +34,12 @@ const DeepSeekIcon = ({ className }: BrandIconProps) => (
     <img src="/deepseek-logo-icon.svg" className={className} alt="DeepSeek" />
 );
 
+// LM Studio — inline SVG
+const LMStudioIcon = ({ className }: BrandIconProps) => (
+    <img src="/lmstudio-icon.svg" className={`${className} theme-adaptive-icon`} alt="LM Studio"
+        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+);
+
 // CLI Sessions — terminal icon from lucide
 const CliIcon = ({ className }: BrandIconProps) => (
     <Terminal className={className} />
@@ -49,6 +55,8 @@ interface ModelsTabProps {
     providers: Record<string, ProviderInfo>;
     selectedModel: string; setSelectedModel: (v: string) => void;
     embeddingModel: string; setEmbeddingModel: (v: string) => void;
+    ollamaBaseUrl: string; setOllamaBaseUrl: (v: string) => void;
+    lmstudioBaseUrl: string; setLmstudioBaseUrl: (v: string) => void;
     openaiKey: string; setOpenaiKey: (v: string) => void;
     anthropicKey: string; setAnthropicKey: (v: string) => void;
     geminiKey: string; setGeminiKey: (v: string) => void;
@@ -84,10 +92,16 @@ interface ProviderMeta {
 
 const PROVIDER_META: Record<string, ProviderMeta> = {
     ollama: {
-        label: 'Ollama (Local)',
+        label: 'Ollama',
         icon: OllamaIcon,
         color: '#22c55e',
-        description: 'Runs locally on your machine. Private, free, no API key needed.',
+        description: 'Self-hosted LLM runner. Connect to a local or network instance — private, free, no API key needed.',
+    },
+    lmstudio: {
+        label: 'LM Studio',
+        icon: LMStudioIcon,
+        color: '#a78bfa',
+        description: 'Run local models via LM Studio on this machine or another on your network. No API key needed.',
     },
     gemini: {
         label: 'Google Gemini',
@@ -172,6 +186,8 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
 export const ModelsTab = ({
     providers, selectedModel, setSelectedModel,
     embeddingModel, setEmbeddingModel,
+    ollamaBaseUrl, setOllamaBaseUrl,
+    lmstudioBaseUrl, setLmstudioBaseUrl,
     openaiKey, setOpenaiKey, anthropicKey, setAnthropicKey,
     geminiKey, setGeminiKey, grokKey, setGrokKey,
     deepseekKey, setDeepseekKey,
@@ -247,7 +263,7 @@ export const ModelsTab = ({
                                             <span className="text-[10px] text-zinc-500 ml-2">
                                                 {providerData.available
                                                     ? `${modelCount} model${modelCount !== 1 ? 's' : ''}`
-                                                    : key === 'ollama' ? 'Not running' : key.endsWith('_cli') ? 'Not installed' : 'No key configured'
+                                                    : key === 'ollama' ? 'Not reachable' : key.endsWith('_cli') ? 'Not installed' : 'No key configured'
                                                 }
                                             </span>
                                         </div>
@@ -266,8 +282,8 @@ export const ModelsTab = ({
                                     <div className="px-4 pb-4 space-y-3 border-t border-zinc-800/50 pt-3">
                                         <p className="text-[10px] text-zinc-500">{meta.description}</p>
 
-                                        {/* API Key input (not for Ollama, Bedrock, or CLI — they have their own blocks) */}
-                                        {key !== 'ollama' && key !== 'bedrock' && !key.endsWith('_cli') && (
+                                        {/* API Key input (not for Ollama, LM Studio, Bedrock, or CLI — they have their own blocks) */}
+                                        {key !== 'ollama' && key !== 'lmstudio' && key !== 'bedrock' && !key.endsWith('_cli') && (
                                             <div className="space-y-1.5">
                                                 <label className="text-[10px] uppercase font-bold text-zinc-500">API Key</label>
                                                 <input
@@ -359,11 +375,22 @@ export const ModelsTab = ({
 
                                         {/* Ollama info */}
                                         {key === 'ollama' && (
-                                            <div className="space-y-1.5">
+                                            <div className="space-y-2.5">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] uppercase font-bold text-zinc-500">Host URL</label>
+                                                    <input
+                                                        type="text"
+                                                        value={ollamaBaseUrl}
+                                                        onChange={e => setOllamaBaseUrl(e.target.value)}
+                                                        className="w-full bg-zinc-900 border border-zinc-800 p-2.5 text-xs text-white focus:border-white focus:outline-none transition-colors"
+                                                        placeholder="http://127.0.0.1:11434"
+                                                    />
+                                                    <p className="text-[10px] text-zinc-600">Point to any Ollama instance on your network (e.g. http://192.168.1.100:11434).</p>
+                                                </div>
                                                 <div className="text-[10px] text-zinc-500">
                                                     {providerData.available
-                                                        ? `Detected ${modelCount} local model${modelCount !== 1 ? 's' : ''}: ${providerData.models.slice(0, 5).join(', ')}${modelCount > 5 ? '...' : ''}`
-                                                        : 'Ollama is not running. Start it to use local models.'
+                                                        ? `Detected ${modelCount} model${modelCount !== 1 ? 's' : ''}: ${providerData.models.slice(0, 5).join(', ')}${modelCount > 5 ? '...' : ''}`
+                                                        : 'No Ollama instance reachable at the configured URL.'
                                                     }
                                                 </div>
                                                 <a
@@ -374,6 +401,38 @@ export const ModelsTab = ({
                                                 >
                                                     <ExternalLink className="h-2.5 w-2.5" />
                                                     Download Ollama →
+                                                </a>
+                                            </div>
+                                        )}
+
+                                        {/* LM Studio section */}
+                                        {key === 'lmstudio' && (
+                                            <div className="space-y-2.5">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] uppercase font-bold text-zinc-500">Host URL</label>
+                                                    <input
+                                                        type="text"
+                                                        value={lmstudioBaseUrl}
+                                                        onChange={e => setLmstudioBaseUrl(e.target.value)}
+                                                        className="w-full bg-zinc-900 border border-zinc-800 p-2.5 text-xs text-white focus:border-white focus:outline-none transition-colors"
+                                                        placeholder="http://localhost:1234"
+                                                    />
+                                                    <p className="text-[10px] text-zinc-600">Point to any LM Studio instance on your network (e.g. http://192.168.1.50:1234). Enable the local server in LM Studio first.</p>
+                                                </div>
+                                                <div className="text-[10px] text-zinc-500">
+                                                    {providerData.available
+                                                        ? `Detected ${modelCount} model${modelCount !== 1 ? 's' : ''}: ${providerData.models.slice(0, 5).map(m => m.replace('lmstudio.', '')).join(', ')}${modelCount > 5 ? '...' : ''}`
+                                                        : 'No LM Studio server reachable at the configured URL.'
+                                                    }
+                                                </div>
+                                                <a
+                                                    href="https://lmstudio.ai"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                                                >
+                                                    <ExternalLink className="h-2.5 w-2.5" />
+                                                    Download LM Studio →
                                                 </a>
                                             </div>
                                         )}
@@ -416,7 +475,7 @@ export const ModelsTab = ({
                                         )}
 
                                         {/* Available models list */}
-                                        {providerData.available && providerData.models.length > 0 && key !== 'ollama' && (
+                                        {providerData.available && providerData.models.length > 0 && key !== 'ollama' && key !== 'lmstudio' && (
                                             <div className="space-y-1">
                                                 <label className="text-[10px] uppercase font-bold text-zinc-600">Available Models</label>
                                                 <div className="flex flex-wrap gap-1.5">

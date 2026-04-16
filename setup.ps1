@@ -344,29 +344,62 @@ Write-Host "[OK] Python found ($global:PYTHON_CMD)" -ForegroundColor Green
 
     # Check uv / uvx
     Invoke-UvCheck
+
+    # Check PostgreSQL (optional — only needed for code indexing)
+    Check-Postgres
 }
 
 # ---------------------------------------------------------------------------
-# Instructions for manual installs
+# PostgreSQL — optional, required only for code-indexing/search feature
 # ---------------------------------------------------------------------------
-function Show-PostgresInstructions {
+function Install-Postgres {
+    # Try winget first (available on Windows 10 1809+ / Windows 11)
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "Attempting to install PostgreSQL via winget..." -ForegroundColor Cyan
+        winget install -e --id PostgreSQL.PostgreSQL.17 --accept-package-agreements --accept-source-agreements
+        # Reload PATH so psql becomes available in this session
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        if (Get-Command psql -ErrorAction SilentlyContinue) {
+            Write-Host "[OK] PostgreSQL installed via winget." -ForegroundColor Green
+            return $true
+        }
+    }
+
+    # winget unavailable or install failed — show manual instructions
     Write-Host ""
     Write-Host "--------------------------------------------------------" -ForegroundColor Yellow
-    Write-Host "   PostgreSQL Installation Instructions for Windows" -ForegroundColor Yellow
+    Write-Host "   Automatic install failed — manual steps for Windows:" -ForegroundColor Yellow
     Write-Host "--------------------------------------------------------" -ForegroundColor Yellow
     Write-Host "1. Download the installer from:"
     Write-Host "   https://www.postgresql.org/download/windows/"
-    Write-Host "2. Run the installer and follow the on-screen prompts."
-    Write-Host "3. IMPORTANT: Add the PostgreSQL bin directory to your System PATH:"
-    Write-Host "   - Search for 'Edit the system environment variables' in the Start menu"
-    Write-Host "   - Click 'Environment Variables'"
-    Write-Host "   - Under 'System variables', find 'Path' and click 'Edit'"
-    Write-Host "   - Click 'New' and add the bin path (e.g. C:\Program Files\PostgreSQL\17\bin)"
-    Write-Host "4. Restart your terminal so the updated PATH takes effect."
-    Write-Host "5. Verify the installation by running: psql --version"
-    Write-Host "   Make sure it prints a version number before continuing."
+    Write-Host "2. Run the installer and follow the prompts."
+    Write-Host "3. Add the bin directory to your PATH, e.g.:"
+    Write-Host "   C:\Program Files\PostgreSQL\17\bin"
+    Write-Host "4. Restart your terminal and run: psql --version"
     Write-Host "--------------------------------------------------------" -ForegroundColor Yellow
     Write-Host ""
+    return $false
+}
+
+function Check-Postgres {
+    if (Get-Command psql -ErrorAction SilentlyContinue) {
+        $pgVer = try { (psql --version).Trim() } catch { "unknown version" }
+        Write-Host "[OK] PostgreSQL found ($pgVer)" -ForegroundColor Green
+        return
+    }
+
+    Write-Host ""
+    Write-Host "[INFO] PostgreSQL not found." -ForegroundColor Yellow
+    Write-Host "  It is required only if you want the code-indexing / repository search"
+    Write-Host "  feature (Settings -> General -> Index Code Repositories)."
+    Write-Host "  You can skip this and install it later, then re-run setup."
+    Write-Host ""
+    $answer = Read-Host "  Install PostgreSQL now? [y/N]"
+    if ($answer -match "^[Yy]") {
+        Install-Postgres | Out-Null
+    } else {
+        Write-Host "  Skipping PostgreSQL. Code indexing will be unavailable until it is installed." -ForegroundColor Gray
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -490,7 +523,7 @@ function Start-SynapseSetup {
 
     Invoke-PrerequisitesCheck
 
-    $RepoUrl = "https://github.com/naveenraj-17/synapse-ai.git"
+    $RepoUrl = "https://github.com/Chrisl154/synapse-ai-cpm.git"
 
     # Clone or update at the fixed install location
     if (Test-Path (Join-Path $InstallDir ".git")) {

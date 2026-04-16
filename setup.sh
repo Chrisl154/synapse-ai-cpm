@@ -142,6 +142,73 @@ install_uv() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# PostgreSQL — optional, required only for code-indexing/search feature
+# ---------------------------------------------------------------------------
+install_postgres() {
+    if [[ "$OS" == "linux" ]]; then
+        if [[ "$DISTRO" == "ubuntu" ]] || [[ "$DISTRO" == "debian" ]]; then
+            echo "Installing PostgreSQL on Ubuntu/Debian..."
+            sudo apt-get update -qq
+            sudo apt-get install -y postgresql
+            sudo service postgresql start || sudo systemctl start postgresql || true
+        elif [[ "$DISTRO" == "fedora" ]] || [[ "$DISTRO" == "rhel" ]] || [[ "$DISTRO" == "centos" ]]; then
+            echo "Installing PostgreSQL on Fedora/RHEL..."
+            sudo dnf install -y postgresql-server
+            sudo postgresql-setup --initdb 2>/dev/null || true
+            sudo systemctl enable --now postgresql
+        elif [[ "$DISTRO" == "arch" ]] || [[ "$DISTRO" == "manjaro" ]]; then
+            echo "Installing PostgreSQL on Arch/Manjaro..."
+            sudo pacman -S --noconfirm postgresql
+            sudo -u postgres initdb -D /var/lib/postgres/data 2>/dev/null || true
+            sudo systemctl enable --now postgresql
+        else
+            echo "⚠ Unknown Linux distro — please install PostgreSQL manually:"
+            echo "  https://www.postgresql.org/download/linux/"
+            return 1
+        fi
+    elif [[ "$OS" == "macos" ]]; then
+        if ! command -v brew &> /dev/null; then
+            echo "⚠ Homebrew not found. Install PostgreSQL manually from https://www.postgresql.org/download/macosx/"
+            return 1
+        fi
+        echo "Installing PostgreSQL via Homebrew..."
+        brew install postgresql@17
+        brew services start postgresql@17
+        # Ensure psql from the new install is on PATH this session
+        export PATH="$(brew --prefix postgresql@17)/bin:$PATH"
+    fi
+    echo "✓ PostgreSQL installed"
+}
+
+check_postgres() {
+    # Reload common Homebrew pg paths on macOS
+    if [[ "$OS" == "macos" ]] && command -v brew &> /dev/null; then
+        export PATH="$(brew --prefix postgresql@17 2>/dev/null)/bin:$(brew --prefix postgresql@16 2>/dev/null)/bin:$PATH"
+    fi
+
+    if command -v psql &> /dev/null; then
+        echo "✓ PostgreSQL found ($(psql --version 2>/dev/null | head -1))"
+        return 0
+    fi
+
+    echo ""
+    echo "⚠ PostgreSQL not found."
+    echo "  It is required only if you want to enable the code-indexing / repository"
+    echo "  search feature (Settings → General → Index Code Repositories)."
+    echo "  You can skip this and enable it later by re-running the setup script."
+    echo ""
+    read -r -p "  Install PostgreSQL now? [y/N] " _pg_answer
+    case "$_pg_answer" in
+        [Yy]*)
+            install_postgres
+            ;;
+        *)
+            echo "  Skipping PostgreSQL. Code indexing will be unavailable until it is installed."
+            ;;
+    esac
+}
+
 check_uvx() {
     # Reload PATH to pick up ~/.local/bin, ~/.cargo/bin where uv is commonly installed
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
@@ -278,6 +345,7 @@ main() {
     check_python
     check_node
     check_uvx
+    check_postgres
     
     # OS-specific installation directory
     if [[ "$OS" == "macos" ]]; then
@@ -362,7 +430,7 @@ main() {
     fi
 
     # Clone or update repo
-    REPO_URL="https://github.com/naveenraj-17/synapse-ai.git"
+    REPO_URL="https://github.com/Chrisl154/synapse-ai-cpm.git"
 
     if [ -d "$INSTALL_DIR/.git" ]; then
         echo ""
