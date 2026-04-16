@@ -232,9 +232,8 @@ export const SettingsView = ({ initialTab = 'general', initialSubTab }: { initia
             if (mode === 'bedrock' || bedrockApiKey) {
                 await refreshBedrockModels();
                 await refreshBedrockInferenceProfiles();
-            } else if (activeTab === 'models' || mode === 'cloud') {
-                await refreshModels();
             }
+            await refreshModels();
             showToast('Configuration saved', 'success');
         } catch (error) {
             console.error(error);
