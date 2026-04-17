@@ -68,7 +68,7 @@ export const SettingsView = ({ initialTab = 'general', initialSubTab }: { initia
     const [loadingInferenceProfiles, setLoadingInferenceProfiles] = useState(false);
     const [inferenceProfilesError, setInferenceProfilesError] = useState<string | null>(null);
     const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://127.0.0.1:11434');
-    const [lmstudioBaseUrl, setLmstudioBaseUrl] = useState('http://localhost:1234');
+    const [lmstudioBaseUrl, setLmstudioBaseUrl] = useState('http://127.0.0.1:1234');
     const [sqlConnectionString, setSqlConnectionString] = useState('');
 
 
@@ -398,7 +398,7 @@ export const SettingsView = ({ initialTab = 'general', initialSubTab }: { initia
                 setAwsRegion(data.aws_region || 'us-east-1');
                 setBedrockInferenceProfile(data.bedrock_inference_profile || '');
                 setOllamaBaseUrl(data.ollama_base_url || 'http://127.0.0.1:11434');
-                setLmstudioBaseUrl(data.lmstudio_base_url || 'http://localhost:1234');
+                setLmstudioBaseUrl(data.lmstudio_base_url || 'http://127.0.0.1:1234');
                 setSqlConnectionString(data.sql_connection_string || '');
                 setN8nUrl(data.n8n_url || 'http://localhost:5678');
                 setN8nApiKey(data.n8n_api_key || '');

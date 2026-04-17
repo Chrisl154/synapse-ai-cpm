@@ -93,7 +93,7 @@ def _ollama_base_url() -> str:
     return os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
 def _lmstudio_base_url() -> str:
-    return os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234")
+    return os.getenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234").replace("//localhost:", "//127.0.0.1:")
 
 OLLAMA_MODEL = "llama3"
 

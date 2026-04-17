@@ -201,7 +201,7 @@ async def get_models():
 
     async def fetch_lmstudio() -> tuple[bool, list[str], list[str]]:
         try:
-            lmstudio_url = settings.get("lmstudio_base_url") or os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234")
+            lmstudio_url = (settings.get("lmstudio_base_url") or os.getenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234")).replace("//localhost:", "//127.0.0.1:")
             async with httpx.AsyncClient() as client:
                 r = await client.get(f"{lmstudio_url}/v1/models", timeout=3.0)
                 if r.status_code == 200:

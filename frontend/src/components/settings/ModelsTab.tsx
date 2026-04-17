@@ -263,7 +263,7 @@ export const ModelsTab = ({
                                             <span className="text-[10px] text-zinc-500 ml-2">
                                                 {providerData.available
                                                     ? `${modelCount} model${modelCount !== 1 ? 's' : ''}`
-                                                    : key === 'ollama' ? 'Not reachable' : key.endsWith('_cli') ? 'Not installed' : 'No key configured'
+                                                    : (key === 'ollama' || key === 'lmstudio') ? 'Not reachable' : key.endsWith('_cli') ? 'Not installed' : 'No key configured'
                                                 }
                                             </span>
                                         </div>
@@ -415,7 +415,7 @@ export const ModelsTab = ({
                                                         value={lmstudioBaseUrl}
                                                         onChange={e => setLmstudioBaseUrl(e.target.value)}
                                                         className="w-full bg-zinc-900 border border-zinc-800 p-2.5 text-xs text-white focus:border-white focus:outline-none transition-colors"
-                                                        placeholder="http://localhost:1234"
+                                                        placeholder="http://127.0.0.1:1234"
                                                     />
                                                     <p className="text-[10px] text-zinc-600">Point to any LM Studio instance on your network (e.g. http://192.168.1.50:1234). Enable the local server in LM Studio first.</p>
                                                 </div>
